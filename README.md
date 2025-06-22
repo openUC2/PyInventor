@@ -15,6 +15,34 @@ http://help.autodesk.com/view/INVNTOR/2019/ENU/
 This is version 0.4 of PyInventor and only allows for individual part creation and export. Not all 3D functionality has been added. The demos (located in the _Totorial_Notebooks folder) demonstrate the current extents of 
 PyInventor's capabilities. New revisions will likely be added in time.
 
+## NEW FEATURES (v0.4.1):
+
+### Body Management and Export
+PyInventor now supports working with multiple bodies in existing IPT files:
+
+- **`list_bodies()`** - Get list of all bodies in a part
+- **`get_body(name)`** - Retrieve a specific body by name  
+- **`show_only_body(body)`** - Hide all bodies except the specified one
+- **`show_all_bodies()`** - Make all bodies visible
+- **`export_body_as(body, filename)`** - Export individual bodies as STP files
+- **`set_parameter(name, value)`** - Modify parameters in existing parts
+
+Example usage:
+```python
+# Open existing IPT file
+part = iPart(path='C:\\path\\to\\file', prefix='part.ipt', overwrite=False)
+
+# Modify parameters
+part.set_parameter('LensDiam', 15)
+
+# Work with bodies
+bodies = part.list_bodies()
+for body_name in bodies:
+    part.export_body_as(body_name)  # Export each body as STP
+```
+
+See `_Tutorial_Notebooks/body_export_example.py` for a complete example.
+
 RECOMMENDED INSTALL PROCESS:
 ________________________________________________________________
 Open a cmd window and run: python setup.py install

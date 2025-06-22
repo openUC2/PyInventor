@@ -414,7 +414,8 @@ class iPart(com_obj):
             
         # Check if file already exists and get next available name
         if self.f_check(file_path, copy_name):
-            copy_name = get_next_filename(file_path, copy_name)
+            base_name = copy_name.replace('.stp', '')
+            copy_name = get_next_filename(file_path, base_name, '.stp')
             
         full_path = file_path + copy_name
         
