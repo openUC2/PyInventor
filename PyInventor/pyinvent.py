@@ -208,6 +208,7 @@ class iPart(com_obj):
             val=8709
         self.view.DisplayMode=val
         
+
     def f_check(self, path, f_name):
         if path[-1]!='\\':
             path=path+'\\'
@@ -309,6 +310,36 @@ class iPart(com_obj):
         
         return full_path 
         
+
+    def set_parameter(self, param_name, param_value):
+        """
+        Create or update a user parameter in the active part document.
+        """
+        params = self.invPartDoc.ComponentDefinition.Parameters
+        try:
+            user_param = params.UserParameters.Item(param_name)
+            user_param.Expression = str(param_value)
+        except:
+            # If the parameter doesn't exist, create it as a length-type parameter
+            user_param = params.UserParameters.AddByValue(
+                param_name,
+                self.unit_conv(param_value),
+                self.invDoc.UnitsOfMeasure.LengthUnits
+            )
+        return user_param
+
+    def get_body(self, body_name):
+        """
+        Returns a surface or solid body by matching its Name property.
+        """
+        # In the Inventor API, both solids and surfaces are stored in 'SurfaceBodies'
+        bodies = self.compdef.SurfaceBodies
+        for body in bodies:
+            if body.Name == body_name:
+                return body
+        raise ValueError(f"No body found with name '{body_name}'")
+
+
     def set_units(self, units='imperial'):
         if units=='imperial':
             angle=constants.kDegreeAngleUnits
@@ -736,6 +767,7 @@ class iPart(com_obj):
         revolveDef=self.compdef.Features.RevolveFeatures.AddFull(profile, axis, op)
         return revolveDef
     
+
     def revolve_ang(self, sketch, angle, axis='x', obj_collection=None, direction='positive', operation='join'):
         sketch_obj, sketch_num, _=self.sketch_test(sketch)
         sketch=sketch_obj
