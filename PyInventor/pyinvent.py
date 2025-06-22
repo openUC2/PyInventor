@@ -332,11 +332,55 @@ class iPart(com_obj):
         """
         Returns a list of all body names in the current part.
         """
-        bodies = self.compdef.SurfaceBodies
-        body_names = []
-        for i in range(1, bodies.Count + 1):
-            body_names.append(bodies.Item(i).Name)
-        return body_names
+        try:
+            bodies = self.compdef.SurfaceBodies
+            body_names = []
+            for i in range(1, bodies.Count + 1):
+                body_names.append(bodies.Item(i).Name)
+            return body_names
+        except Exception as e:
+            print(f"Error accessing SurfaceBodies: {e}")
+            # Fallback: try accessing solid bodies if surface bodies don't work
+            try:
+                solid_bodies = self.compdef.SolidBodies
+                body_names = []
+                for i in range(1, solid_bodies.Count + 1):
+                    body_names.append(solid_bodies.Item(i).Name)
+                return body_names
+            except Exception as e2:
+                print(f"Error accessing SolidBodies: {e2}")
+                return []
+
+    def debug_info(self):
+        """
+        Returns debug information about the iPart object to help troubleshoot issues.
+        """
+        info = {
+            'has_compdef': hasattr(self, 'compdef'),
+            'compdef_type': type(self.compdef).__name__ if hasattr(self, 'compdef') else 'None',
+            'methods': [method for method in dir(self) if not method.startswith('_') and callable(getattr(self, method))],
+            'has_surface_bodies': False,
+            'has_solid_bodies': False,
+            'surface_body_count': 0,
+            'solid_body_count': 0
+        }
+        
+        if hasattr(self, 'compdef'):
+            try:
+                surface_bodies = self.compdef.SurfaceBodies
+                info['has_surface_bodies'] = True
+                info['surface_body_count'] = surface_bodies.Count
+            except:
+                pass
+                
+            try:
+                solid_bodies = self.compdef.SolidBodies
+                info['has_solid_bodies'] = True
+                info['solid_body_count'] = solid_bodies.Count
+            except:
+                pass
+        
+        return info
 
     def get_body(self, body_name):
         """
