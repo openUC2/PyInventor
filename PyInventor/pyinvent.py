@@ -328,16 +328,163 @@ class iPart(com_obj):
             )
         return user_param
 
+    def list_bodies(self):
+        """
+        Returns a list of all body names in the current part.
+        """
+        try:
+            bodies = self.compdef.SurfaceBodies
+            body_names = []
+            for i in range(1, bodies.Count + 1):
+                body_names.append(bodies.Item(i).Name)
+            return body_names
+        except Exception as e:
+            print(f"Error accessing SurfaceBodies: {e}")
+            # Fallback: try accessing solid bodies if surface bodies don't work
+            try:
+                solid_bodies = self.compdef.SolidBodies
+                body_names = []
+                for i in range(1, solid_bodies.Count + 1):
+                    body_names.append(solid_bodies.Item(i).Name)
+                return body_names
+            except Exception as e2:
+                print(f"Error accessing SolidBodies: {e2}")
+                return []
+
+    def debug_info(self):
+        """
+        Returns debug information about the iPart object to help troubleshoot issues.
+        """
+        info = {
+            'has_compdef': hasattr(self, 'compdef'),
+            'compdef_type': type(self.compdef).__name__ if hasattr(self, 'compdef') else 'None',
+            'methods': [method for method in dir(self) if not method.startswith('_') and callable(getattr(self, method))],
+            'has_surface_bodies': False,
+            'has_solid_bodies': False,
+            'surface_body_count': 0,
+            'solid_body_count': 0
+        }
+        
+        if hasattr(self, 'compdef'):
+            try:
+                surface_bodies = self.compdef.SurfaceBodies
+                info['has_surface_bodies'] = True
+                info['surface_body_count'] = surface_bodies.Count
+            except:
+                pass
+                
+            try:
+                solid_bodies = self.compdef.SolidBodies
+                info['has_solid_bodies'] = True
+                info['solid_body_count'] = solid_bodies.Count
+            except:
+                pass
+        
+        return info
+
     def get_body(self, body_name):
         """
         Returns a surface or solid body by matching its Name property.
         """
         # In the Inventor API, both solids and surfaces are stored in 'SurfaceBodies'
         bodies = self.compdef.SurfaceBodies
-        for body in bodies:
+        for i in range(1, bodies.Count + 1):
+            body = bodies.Item(i)
             if body.Name == body_name:
                 return body
         raise ValueError(f"No body found with name '{body_name}'")
+
+    def show_only_body(self, body_or_name):
+        """
+        Hide all bodies except the specified one.
+        
+        Args:
+            body_or_name: Either a body object returned by get_body() or a string with the body name
+        """
+        if isinstance(body_or_name, str):
+            target_body = self.get_body(body_or_name)
+        else:
+            target_body = body_or_name
+            
+        bodies = self.compdef.SurfaceBodies
+        for i in range(1, bodies.Count + 1):
+            body = bodies.Item(i)
+            if body.Name == target_body.Name:
+                body.Visible = True
+            else:
+                body.Visible = False
+
+    def show_all_bodies(self):
+        """
+        Make all bodies visible.
+        """
+        bodies = self.compdef.SurfaceBodies
+        for i in range(1, bodies.Count + 1):
+            body = bodies.Item(i)
+            body.Visible = True
+
+    def export_body_as(self, body_or_name, copy_name='', file_path=''):
+        """
+        Export a specific body as STP file.
+        
+        Args:
+            body_or_name: Either a body object returned by get_body() or a string with the body name
+            copy_name: Name for the exported file (will add .stp extension if not present)
+            file_path: Directory path for the exported file (uses current file path if empty)
+        """
+        if isinstance(body_or_name, str):
+            target_body = self.get_body(body_or_name)
+            body_name = body_or_name
+        else:
+            target_body = body_or_name
+            body_name = target_body.Name
+            
+        # Set default file name if not provided
+        if copy_name == '':
+            copy_name = f"{body_name}.stp"
+        elif not copy_name.endswith('.stp'):
+            copy_name = f"{copy_name}.stp"
+            
+        # Set default file path if not provided
+        if file_path == '':
+            if self.file_path != '':
+                file_path = self.file_path
+            else:
+                file_path = os.getcwd()
+                
+        # Ensure path ends with backslash
+        if file_path[-1] != '\\':
+            file_path = file_path + '\\'
+            
+        # Check if file already exists and get next available name
+        if self.f_check(file_path, copy_name):
+            base_name = copy_name.replace('.stp', '')
+            copy_name = get_next_filename(file_path, base_name, '.stp')
+            
+        full_path = file_path + copy_name
+        
+        # Hide all other bodies, show only target body
+        original_visibility = {}
+        bodies = self.compdef.SurfaceBodies
+        for i in range(1, bodies.Count + 1):
+            body = bodies.Item(i)
+            original_visibility[body.Name] = body.Visible
+            if body.Name == target_body.Name:
+                body.Visible = True
+            else:
+                body.Visible = False
+        
+        try:
+            # Export the part (with only the target body visible)
+            self.invDoc.SaveAs(full_path, SaveCopyAs=True)
+            print(f'Body "{body_name}" successfully exported as: {full_path}')
+        finally:
+            # Restore original visibility
+            for i in range(1, bodies.Count + 1):
+                body = bodies.Item(i)
+                body.Visible = original_visibility[body.Name]
+                
+        return full_path
 
 
     def set_units(self, units='imperial'):
