@@ -1279,6 +1279,248 @@ class iPart(com_obj):
         return line
             
             
+
+class iAssembly(com_obj):
+    """
+    Assembly document class for creating and managing Inventor assembly documents (.iam files).
+    Supports placing components in grid patterns with specific positions and orientations.
+    """
+    
+    def __init__(self, path='', prefix='', units='imperial', overwrite=True):
+        """
+        Initialize assembly document.
+        
+        Args:
+            path: Directory path for the assembly file
+            prefix: Assembly filename (with .iam extension)
+            units: Unit system ('imperial' or 'metric')
+            overwrite: Whether to overwrite existing file
+        """
+        self.overwrite = overwrite
+        self.file_path = path
+        self.f_name = prefix
+        self.units = units
+        
+        # Setup COM with Inventor
+        super(iAssembly, self).__init__()
+        
+        if overwrite:
+            self.overwrite_file(path, prefix)
+        
+        # Open assembly or create new assembly
+        self.new_assembly(prefix, path)
+        
+        # Set document units
+        self.set_units(units)
+        
+        # Set file name and handle
+        self.f_name = prefix
+        self.file_path = path
+        
+        # Grid spacing defaults (can be overridden)
+        self.grid_spacing = (50.0, 50.0, 55.0)  # X, Y, Z spacing in mm
+        
+    def new_assembly(self, prefix='', path=''):
+        """Generate new assembly document or open existing one."""
+        if prefix == '':
+            self.invDoc = self.invApp.Documents.Add(constants.kAssemblyDocumentObject, "", True)
+        else:
+            # Check if input filename exists
+            if os.path.isfile(os.path.join(path, prefix)):
+                try:
+                    self.invDoc = self.invApp.Documents.Open(os.path.join(path, prefix))
+                except:
+                    raise Exception('ERROR: Unable to open file, check filetype and if file is in target directory.')
+                if self.invDoc.DocumentType == constants.kAssemblyDocumentObject:
+                    pass
+                else:
+                    raise Exception('ERROR: Document type is not assembly document')
+            else:
+                self.invDoc = self.invApp.Documents.Add(constants.kAssemblyDocumentObject, "", True)
+        
+        # Cast Document to AssemblyDocument
+        self.invAsmDoc = self.mod.AssemblyDocument(self.invDoc)
+        self.compdef = self.invAsmDoc.ComponentDefinition
+        
+        # Opened document handle
+        self.oDoc = self.invAppCom.ActiveDocument
+        
+        # Create command manager
+        self.cmdManager = self.invApp.CommandManager
+        
+        # Set transient geometry object
+        self.tg = self.invApp.TransientGeometry
+        self.trans_obj = self.invApp.TransientObjects
+        
+        # Object view handle
+        self.view = self.invApp.ActiveView
+        
+    def set_units(self, units):
+        """Set assembly document units."""
+        if units == 'imperial':
+            self.invDoc.UnitsOfMeasure.LengthUnits = constants.kInchLengthUnits
+            self.invDoc.UnitsOfMeasure.AngleUnits = constants.kDegreeAngleUnits
+        elif units == 'metric':
+            self.invDoc.UnitsOfMeasure.LengthUnits = constants.kMillimeterLengthUnits
+            self.invDoc.UnitsOfMeasure.AngleUnits = constants.kRadianAngleUnits
+        else:
+            raise Exception('ERROR: Units must be either imperial or metric')
+            
+    def unit_conv(self, val_in):
+        """Convert units based on current unit system."""
+        if self.units == 'imperial':
+            mult = 1/25.4  # Convert mm to inches
+        elif self.units == 'metric':
+            mult = 1
+        return val_in * mult
+    
+    def ang_conv(self, val_in):
+        """Convert angle units."""
+        if self.units == 'imperial':
+            mult = np.pi/180  # Convert degrees to radians
+        elif self.units == 'metric':
+            mult = 1
+        return val_in * mult
+    
+    def place_component(self, component_path, position=(0, 0, 0), rotation=(0, 0, 0)):
+        """
+        Place a component (part or assembly) at specified position with rotation.
+        
+        Args:
+            component_path: Full path to the component file (.ipt or .iam)
+            position: (x, y, z) position in current units
+            rotation: (rx, ry, rz) rotation angles in degrees
+            
+        Returns:
+            ComponentOccurrence object
+        """
+        if not os.path.exists(component_path):
+            raise Exception(f'ERROR: Component file not found: {component_path}')
+        
+        # Convert position to current units
+        pos_x = self.unit_conv(position[0])
+        pos_y = self.unit_conv(position[1])
+        pos_z = self.unit_conv(position[2])
+        
+        # Convert rotation angles
+        rot_x = self.ang_conv(rotation[0])
+        rot_y = self.ang_conv(rotation[1])
+        rot_z = self.ang_conv(rotation[2])
+        
+        # Create transformation matrix
+        transform_matrix = self.tg.CreateMatrix()
+        
+        # Apply rotations (order: Z, Y, X)
+        if rotation[2] != 0:  # Z rotation
+            z_axis = self.tg.CreateUnitVector(0, 0, 1)
+            transform_matrix.SetToRotation(rot_z, z_axis, self.tg.CreatePoint(0, 0, 0))
+        
+        if rotation[1] != 0:  # Y rotation
+            y_axis = self.tg.CreateUnitVector(0, 1, 0)
+            y_rotation = self.tg.CreateMatrix()
+            y_rotation.SetToRotation(rot_y, y_axis, self.tg.CreatePoint(0, 0, 0))
+            transform_matrix.PreMultiplyBy(y_rotation)
+            
+        if rotation[0] != 0:  # X rotation
+            x_axis = self.tg.CreateUnitVector(1, 0, 0)
+            x_rotation = self.tg.CreateMatrix()
+            x_rotation.SetToRotation(rot_x, x_axis, self.tg.CreatePoint(0, 0, 0))
+            transform_matrix.PreMultiplyBy(x_rotation)
+        
+        # Apply translation
+        translation = self.tg.CreateVector(pos_x, pos_y, pos_z)
+        transform_matrix.SetTranslation(translation)
+        
+        # Place the component
+        occurrence = self.compdef.Occurrences.Add(component_path, transform_matrix)
+        
+        return occurrence
+    
+    def set_grid_spacing(self, x_spacing=50.0, y_spacing=50.0, z_spacing=55.0):
+        """Set the grid spacing for component placement."""
+        self.grid_spacing = (x_spacing, y_spacing, z_spacing)
+    
+    def place_component_at_grid(self, component_path, grid_x=0, grid_y=0, grid_z=0, rotation=(0, 0, 0)):
+        """
+        Place a component at grid coordinates.
+        
+        Args:
+            component_path: Full path to the component file
+            grid_x, grid_y, grid_z: Grid coordinates (integers)
+            rotation: (rx, ry, rz) rotation angles in degrees
+            
+        Returns:
+            ComponentOccurrence object
+        """
+        # Calculate actual position from grid coordinates
+        actual_x = grid_x * self.grid_spacing[0]
+        actual_y = grid_y * self.grid_spacing[1] 
+        actual_z = grid_z * self.grid_spacing[2]
+        
+        return self.place_component(component_path, (actual_x, actual_y, actual_z), rotation)
+    
+    def create_uc2_grid_from_table(self, component_table):
+        """
+        Create UC2 cube assembly from a table of components.
+        
+        Args:
+            component_table: List of dictionaries with keys:
+                - 'file': path to component file
+                - 'grid_pos': (x, y, z) grid coordinates
+                - 'rotation': (rx, ry, rz) rotation angles in degrees (optional)
+                - 'name': component name (optional)
+                
+        Returns:
+            List of placed ComponentOccurrence objects
+        """
+        placed_components = []
+        
+        for i, component_info in enumerate(component_table):
+            # Extract component information
+            comp_file = component_info['file']
+            grid_pos = component_info['grid_pos']
+            rotation = component_info.get('rotation', (0, 0, 0))
+            comp_name = component_info.get('name', f'Component_{i+1}')
+            
+            try:
+                # Place the component
+                occurrence = self.place_component_at_grid(
+                    comp_file, 
+                    grid_pos[0], grid_pos[1], grid_pos[2],
+                    rotation
+                )
+                
+                # Set component name if provided
+                if comp_name:
+                    occurrence.Name = comp_name
+                    
+                placed_components.append(occurrence)
+                print(f"Placed {comp_name} at grid {grid_pos} with rotation {rotation}")
+                
+            except Exception as e:
+                print(f"Failed to place {comp_name}: {str(e)}")
+                
+        return placed_components
+    
+    def save(self, file_path='', file_name=''):
+        """Save the assembly document."""
+        if file_path == '' and file_name == '':
+            self.invDoc.Save()
+        else:
+            if file_path != '':
+                save_path = os.path.join(file_path, file_name) if file_name else file_path
+            else:
+                save_path = file_name
+            self.invDoc.SaveAs(save_path, False)
+    
+    def close(self, save=True):
+        """Close the assembly document."""
+        if save:
+            self.invAsmDoc.Close(SkipSave=False)
+        else:
+            self.invAsmDoc.Close(SkipSave=True)
+
+
 class structure(object):
     def __init__(self, part, sketch, start=(0.0,0.0), direction=0):
         

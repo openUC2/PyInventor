@@ -26,6 +26,6 @@ except (ImportError, ModuleNotFoundError):
     print('Xlwings module not installed, install glob module using: $ conda  install -c conda-forge xlwings ')
 
 from . import  pyinvent
-from .pyinvent import com_obj, structure, iPart, arc_pattern, circle_pattern 
+from .pyinvent import com_obj, structure, iPart, iAssembly, arc_pattern, circle_pattern 
 
-__all__=['pyinvent', 'com_obj', 'structure', 'iPart', 'arc_pattern', 'circle_pattern']
+__all__=['pyinvent', 'com_obj', 'structure', 'iPart', 'iAssembly', 'arc_pattern', 'circle_pattern']
