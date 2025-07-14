@@ -1277,8 +1277,341 @@ class iPart(com_obj):
         obj=obj_dict[obj_key]
         line=self.sketch_line(sketch, start=obj['start_pt'], end=obj['end_pt'])
         return line
+
+
+class iAssembly(com_obj):
+    """
+    Class for handling Autodesk Inventor Assembly documents and creating images from different perspectives.
+    """
+    
+    def __init__(self, path='', prefix='', overwrite=False):
+        """
+        Initialize assembly document.
+        
+        Args:
+            path: Directory path to the assembly file
+            prefix: Assembly filename (IAM file)
+            overwrite: Whether to overwrite existing files
+        """
+        self.overwrite = overwrite
+        self.file_path = path
+        self.f_name = prefix
+        
+        # Setup COM with Inventor
+        super(iAssembly, self).__init__()
+        
+        if overwrite:
+            self.overwrite_file(path, prefix)
+        
+        # Open assembly
+        self.open_assembly(prefix, path)
+        
+    def open_assembly(self, prefix='', path=''):
+        """
+        Opens an existing assembly document or creates new one.
+        """
+        if prefix == '':
+            self.invDoc = self.invApp.Documents.Add(constants.kAssemblyDocumentObject, "", True)
+        else:
+            # Check if input filename exists
+            full_path = os.path.join(path, prefix) if path else prefix
+            if os.path.isfile(full_path):
+                try:
+                    self.invDoc = self.invApp.Documents.Open(full_path)
+                except:
+                    raise Exception('ERROR: Unable to open assembly file, check filetype and if file exists.')
+                if self.invDoc.DocumentType == constants.kAssemblyDocumentObject:
+                    pass
+                else:
+                    raise Exception('ERROR: Document type is not assembly document')
+            else:
+                self.invDoc = self.invApp.Documents.Add(constants.kAssemblyDocumentObject, "", True)
+        
+        # Casting Document to AssemblyDocument
+        self.invAssemblyDoc = self.mod.AssemblyDocument(self.invDoc)
+        self.compdef = self.invAssemblyDoc.ComponentDefinition
+        
+        # Opened document handle
+        self.oDoc = self.invAppCom.ActiveDocument
+        
+        # Object view handle
+        self.view = self.invApp.ActiveView
+        
+    def set_view_orientation(self, view_type):
+        """
+        Set the view orientation to one of the standard six perspectives.
+        
+        Args:
+            view_type: String indicating view type:
+                      'front', 'back', 'left', 'right', 'top', 'bottom',
+                      'iso' (isometric), 'custom'
+        """
+        view_constants = {
+            'front': constants.kFrontViewOrientation,
+            'back': constants.kBackViewOrientation, 
+            'left': constants.kLeftViewOrientation,
+            'right': constants.kRightViewOrientation,
+            'top': constants.kTopViewOrientation,
+            'bottom': constants.kBottomViewOrientation,
+            'iso': constants.kIsoTopRightViewOrientation
+        }
+        
+        if view_type.lower() in view_constants:
+            self.view.SetOrientation(ViewOrientationType=view_constants[view_type.lower()])
+            self.view.Fit()  # Fit the view to show all geometry
+        else:
+            raise Exception(f'ERROR: Invalid view type "{view_type}". Valid types: {list(view_constants.keys())}')
+    
+    def set_visual_style(self, shaded=True, edges=True, hidden_edges=False, realistic=False):
+        """
+        Set the visual style for rendering.
+        Same functionality as iPart class.
+        """
+        if realistic == False:
+            if shaded == True:
+                if edges == False:
+                    val = 8708
+                else:
+                    if hidden_edges == True:
+                        val = 8707
+                    else:
+                        val = 8710
+            else:
+                if edges == True:
+                    if hidden_edges == True:
+                        val = 8712
+                    else:
+                        val = 8711
+                else:
+                    val = 8706
+        else:
+            val = 8709
+        self.view.DisplayMode = val
+    
+    def export_image(self, filename='', file_path='', image_format='png', width=1920, height=1080):
+        """
+        Export the current view as an image file.
+        
+        Args:
+            filename: Name for the image file (extension will be added if missing)
+            file_path: Directory path for the image file
+            image_format: Image format ('png', 'jpg', 'bmp', 'tif')
+            width: Image width in pixels
+            height: Image height in pixels
+        
+        Returns:
+            Full path to the exported image file
+        """
+        # Set up file path
+        if file_path == '' and self.file_path != '':
+            file_path = self.file_path
+        elif file_path == '' and self.file_path == '':
+            file_path = os.getcwd()
+        
+        # Set up filename
+        if filename == '':
+            base_name = self.f_name.split('.')[0] if self.f_name else 'assembly_image'
+            filename = f"{base_name}.{image_format}"
+        elif not filename.endswith(f'.{image_format}'):
+            filename = f"{filename}.{image_format}"
+        
+        full_path = os.path.join(file_path, filename)
+        
+        # Ensure directory exists
+        os.makedirs(file_path, exist_ok=True)
+        
+        # Export image using Inventor's API
+        try:
+            # Use the view's export functionality
+            if hasattr(self.view, 'SaveImage'):
+                self.view.SaveImage(full_path, width, height)
+            else:
+                # Alternative method using document export
+                # Set up export options based on format
+                format_map = {
+                    'png': 'PNG',
+                    'jpg': 'JPEG', 
+                    'jpeg': 'JPEG',
+                    'bmp': 'BMP',
+                    'tif': 'TIFF',
+                    'tiff': 'TIFF'
+                }
+                
+                export_format = format_map.get(image_format.lower(), 'PNG')
+                
+                # Create translator for image export
+                translator = self.invApp.TranslatorAddIns.ItemByName(f"{export_format} Image Export")
+                
+                if translator:
+                    context = self.invApp.TransientObjects.CreateTranslationContext()
+                    context.Type = constants.kFileBrowseIOMechanism
+                    
+                    # Set image size options if available
+                    if translator.HasSaveCopyAsOptions:
+                        options = translator.SaveCopyAsOptions
+                        if hasattr(options, 'Width'):
+                            options.Width = width
+                        if hasattr(options, 'Height'):
+                            options.Height = height
+                    
+                    data_medium = self.invApp.TransientObjects.CreateDataMedium()
+                    data_medium.FileName = full_path
+                    
+                    translator.SaveCopyAs(self.invDoc, context, options, data_medium)
+                else:
+                    raise Exception(f'ERROR: Could not find {export_format} image translator')
+        
+        except Exception as e:
+            raise Exception(f'ERROR: Failed to export image: {str(e)}')
+        
+        return full_path
+    
+    def create_perspective_images(self, base_filename='', output_path='', 
+                                views=['front', 'back', 'left', 'right', 'top', 'bottom'],
+                                image_format='png', width=1920, height=1080,
+                                realistic=False, wireframe=False):
+        """
+        Create images from multiple perspectives of the assembly.
+        
+        Args:
+            base_filename: Base name for image files (view name will be appended)
+            output_path: Directory path for output images
+            views: List of view perspectives to create
+            image_format: Image format for export
+            width: Image width in pixels
+            height: Image height in pixels
+            realistic: Whether to use realistic rendering
+            wireframe: Whether to use wireframe mode
+        
+        Returns:
+            List of paths to created image files
+        """
+        if base_filename == '':
+            base_filename = self.f_name.split('.')[0] if self.f_name else 'assembly'
+        
+        if output_path == '':
+            output_path = self.file_path if self.file_path else os.getcwd()
+        
+        exported_files = []
+        
+        # Set visual style based on parameters
+        if wireframe:
+            self.set_visual_style(shaded=False, edges=True, realistic=False)
+        else:
+            self.set_visual_style(shaded=True, edges=True, realistic=realistic)
+        
+        for view in views:
+            try:
+                # Set the view orientation
+                self.set_view_orientation(view)
+                
+                # Create filename with view suffix
+                view_filename = f"{base_filename}_{view}.{image_format}"
+                
+                # Export the image
+                full_path = self.export_image(
+                    filename=view_filename,
+                    file_path=output_path,
+                    image_format=image_format,
+                    width=width,
+                    height=height
+                )
+                
+                exported_files.append(full_path)
+                print(f"Created image: {full_path}")
+                
+            except Exception as e:
+                print(f"WARNING: Failed to create {view} view image: {str(e)}")
+                continue
+        
+        return exported_files
+    
+    def close(self, save=False):
+        """
+        Close the assembly document.
+        
+        Args:
+            save: Whether to save before closing
+        """
+        if save:
+            self.invAssemblyDoc.Close(SkipSave=False)
+        else:
+            self.invAssemblyDoc.Close(SkipSave=True)
+
+
+def create_assembly_images_batch(assembly_folder, output_folder='', 
+                               views=['front', 'back', 'left', 'right', 'top', 'bottom'],
+                               image_format='png', width=1920, height=1080,
+                               realistic=False, wireframe=False):
+    """
+    Batch process multiple assembly files to create images from different perspectives.
+    
+    Args:
+        assembly_folder: Path to folder containing assembly files (IAM)
+        output_folder: Path to folder for output images (defaults to assembly_folder)
+        views: List of view perspectives to create
+        image_format: Image format for export
+        width: Image width in pixels  
+        height: Image height in pixels
+        realistic: Whether to use realistic rendering
+        wireframe: Whether to use wireframe mode
+    
+    Returns:
+        Dictionary mapping assembly filenames to lists of created image paths
+    """
+    if output_folder == '':
+        output_folder = assembly_folder
+    
+    # Find all IAM files in the folder
+    iam_pattern = os.path.join(assembly_folder, '*.iam')
+    assembly_files = glob.glob(iam_pattern)
+    
+    if not assembly_files:
+        print(f"No assembly files (*.iam) found in {assembly_folder}")
+        return {}
+    
+    results = {}
+    
+    for asm_file in assembly_files:
+        try:
+            asm_filename = os.path.basename(asm_file)
+            base_name = os.path.splitext(asm_filename)[0]
             
+            print(f"\nProcessing assembly: {asm_filename}")
             
+            # Open the assembly
+            assembly = iAssembly(path=assembly_folder, prefix=asm_filename, overwrite=False)
+            
+            # Create output subfolder for this assembly
+            asm_output_folder = os.path.join(output_folder, base_name + '_images')
+            
+            # Create perspective images
+            exported_files = assembly.create_perspective_images(
+                base_filename=base_name,
+                output_path=asm_output_folder,
+                views=views,
+                image_format=image_format,
+                width=width,
+                height=height,
+                realistic=realistic,
+                wireframe=wireframe
+            )
+            
+            results[asm_filename] = exported_files
+            
+            # Close the assembly
+            assembly.close(save=False)
+            
+            print(f"Completed processing {asm_filename}: {len(exported_files)} images created")
+            
+        except Exception as e:
+            print(f"ERROR processing {asm_file}: {str(e)}")
+            results[asm_filename] = []
+            continue
+    
+    return results
+
+
 class structure(object):
     def __init__(self, part, sketch, start=(0.0,0.0), direction=0):
         
