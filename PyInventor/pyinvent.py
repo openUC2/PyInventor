@@ -1349,8 +1349,14 @@ class iAssembly(com_obj):
         # Opened document handle
         self.oDoc = self.invAppCom.ActiveDocument
         
-        # Object view handle
+        # Object view handle - ensure we have a valid view
         self.view = self.invApp.ActiveView
+        if not self.view:
+            # If no active view, try to get from document
+            if hasattr(self.invDoc, 'ActiveView'):
+                self.view = self.invDoc.ActiveView
+            elif hasattr(self.invDoc, 'Views') and self.invDoc.Views.Count > 0:
+                self.view = self.invDoc.Views.Item(1)
         
     def set_view_orientation(self, view_type):
         """
@@ -1372,25 +1378,64 @@ class iAssembly(com_obj):
         }
         
         if view_type.lower() in view_constants:
-            # For assemblies, use the Camera property to set orientation
+            # For assemblies, we need to use the active document's view
             try:
-                camera = self.view.Camera
-                camera.ViewOrientationType = view_constants[view_type.lower()]
-                camera.Apply()
-                self.view.Fit()  # Fit the view to show all geometry
-            except:
-                # Fallback approach: try direct method call
-                try:
-                    self.view.SetOrientation(ViewOrientationType=view_constants[view_type.lower()])
-                    self.view.Fit()
-                except:
-                    # Alternative approach: use the document's view management
-                    try:
-                        self.invAssemblyDoc.Views.Item(1).Camera.ViewOrientationType = view_constants[view_type.lower()]
-                        self.invAssemblyDoc.Views.Item(1).Camera.Apply()
-                        self.view.Fit()
-                    except Exception as e:
-                        raise Exception(f'ERROR: Unable to set view orientation for "{view_type}": {str(e)}')
+                # Method 1: Try using the document's active view directly
+                if hasattr(self.invDoc, 'ActiveView'):
+                    active_view = self.invDoc.ActiveView
+                    if hasattr(active_view, 'Camera'):
+                        camera = active_view.Camera
+                        camera.ViewOrientationType = view_constants[view_type.lower()]
+                        camera.Apply()
+                        active_view.Fit()
+                        return
+                
+                # Method 2: Use the Application's active view
+                if hasattr(self.invApp, 'ActiveView'):
+                    active_view = self.invApp.ActiveView
+                    if hasattr(active_view, 'Camera'):
+                        camera = active_view.Camera
+                        camera.ViewOrientationType = view_constants[view_type.lower()]
+                        camera.Apply()
+                        active_view.Fit()
+                        return
+                
+                # Method 3: Try using the document's views collection
+                if hasattr(self.invDoc, 'Views') and self.invDoc.Views.Count > 0:
+                    view = self.invDoc.Views.Item(1)
+                    if hasattr(view, 'Camera'):
+                        camera = view.Camera
+                        camera.ViewOrientationType = view_constants[view_type.lower()]
+                        camera.Apply()
+                        view.Fit()
+                        return
+                
+                # Method 4: Try using the CommandManager to change view
+                if hasattr(self.invApp, 'CommandManager'):
+                    # Use the standard view commands
+                    view_command_map = {
+                        'front': 'AppFrontViewCommand',
+                        'back': 'AppBackViewCommand',
+                        'left': 'AppLeftViewCommand',
+                        'right': 'AppRightViewCommand',
+                        'top': 'AppTopViewCommand',
+                        'bottom': 'AppBottomViewCommand',
+                        'iso': 'AppIsometricViewCommand'
+                    }
+                    
+                    command_name = view_command_map.get(view_type.lower())
+                    if command_name:
+                        try:
+                            cmd = self.invApp.CommandManager.ControlDefinitions.Item(command_name)
+                            cmd.Execute()
+                            return
+                        except:
+                            pass
+                
+                raise Exception(f'All methods failed to set view orientation for "{view_type}"')
+                
+            except Exception as e:
+                raise Exception(f'ERROR: Unable to set view orientation for "{view_type}": {str(e)}')
         else:
             raise Exception(f'ERROR: Invalid view type "{view_type}". Valid types: {list(view_constants.keys())}')
     
@@ -1418,7 +1463,19 @@ class iAssembly(com_obj):
                     val = 8706
         else:
             val = 8709
-        self.view.DisplayMode = val
+        
+        # Try to set display mode on the view
+        try:
+            if self.view and hasattr(self.view, 'DisplayMode'):
+                self.view.DisplayMode = val
+            elif hasattr(self.invApp, 'ActiveView') and self.invApp.ActiveView:
+                self.invApp.ActiveView.DisplayMode = val
+            elif hasattr(self.invDoc, 'ActiveView') and self.invDoc.ActiveView:
+                self.invDoc.ActiveView.DisplayMode = val
+        except Exception as e:
+            # If setting display mode fails, continue without error
+            # This is not critical for the overall functionality
+            pass
     
     def export_image(self, filename='', file_path='', image_format='png', width=1920, height=1080):
         """
@@ -1454,12 +1511,34 @@ class iAssembly(com_obj):
         
         # Export image using Inventor's API
         try:
-            # Use the view's export functionality
-            if hasattr(self.view, 'SaveImage'):
-                self.view.SaveImage(full_path, width, height)
-            else:
-                # Alternative method using document export
-                # Set up export options based on format
+            # Method 1: Try using the active view's SaveImage method
+            active_view = None
+            
+            # Get active view from document or application
+            if hasattr(self.invDoc, 'ActiveView'):
+                active_view = self.invDoc.ActiveView
+            elif hasattr(self.invApp, 'ActiveView'):
+                active_view = self.invApp.ActiveView
+            
+            if active_view and hasattr(active_view, 'SaveImage'):
+                active_view.SaveImage(full_path, width, height)
+                return full_path
+            
+            # Method 2: Try using document's export capabilities
+            if hasattr(self.invDoc, 'SaveAs'):
+                # First try BMP format as it's often more reliable
+                if image_format.lower() in ['bmp']:
+                    bmp_path = full_path.replace(f'.{image_format}', '.bmp')
+                    # Use a simple approach - export as BMP then convert if needed
+                    self.invDoc.SaveAs(bmp_path, False)
+                    if os.path.exists(bmp_path) and bmp_path != full_path:
+                        # If we need a different format, copy the file
+                        shutil.copy2(bmp_path, full_path)
+                        os.remove(bmp_path)
+                    return full_path
+            
+            # Method 3: Try using application's TranslatorAddIns if available
+            if hasattr(self.invApp, 'TranslatorAddIns'):
                 format_map = {
                     'png': 'PNG',
                     'jpg': 'JPEG', 
@@ -1490,8 +1569,50 @@ class iAssembly(com_obj):
                     data_medium.FileName = full_path
                     
                     translator.SaveCopyAs(self.invDoc, context, options, data_medium)
-                else:
-                    raise Exception(f'ERROR: Could not find {export_format} image translator')
+                    return full_path
+            
+            # Method 4: Try using the view's export via screenshot if available
+            if hasattr(self.invApp, 'CommandManager'):
+                # Try to trigger screen capture command
+                try:
+                    # This might work for some versions
+                    self.invApp.CommandManager.ControlDefinitions.Item('AppScreenCaptureCommand').Execute()
+                    # Note: This would open a dialog, so it's not ideal for automation
+                except:
+                    pass
+            
+            # Method 5: Fallback - try to use Windows clipboard and save
+            # This is a last resort and might not work in all scenarios
+            try:
+                import win32clipboard
+                import win32con
+                from PIL import ImageGrab
+                
+                # Try to copy screen to clipboard then save
+                self.invApp.CommandManager.ControlDefinitions.Item('AppCopyCommand').Execute()
+                
+                # Wait a bit for clipboard to be populated
+                import time
+                time.sleep(0.5)
+                
+                # Get image from clipboard
+                img = ImageGrab.grabclipboard()
+                if img:
+                    # Resize if needed
+                    if img.size != (width, height):
+                        img = img.resize((width, height))
+                    
+                    # Save in the requested format
+                    img.save(full_path, format=image_format.upper())
+                    return full_path
+                    
+            except ImportError:
+                pass  # PIL not available
+            except:
+                pass  # Some other error with clipboard approach
+            
+            # If all methods fail, create a simple placeholder or raise an error
+            raise Exception(f'Unable to export image using any available method')
         
         except Exception as e:
             raise Exception(f'ERROR: Failed to export image: {str(e)}')

@@ -21,12 +21,23 @@ def single_assembly_example():
     
     print("=== Single Assembly Image Creation Example ===")
     
-    # Open an existing assembly file
-    assembly_path = r'C:\path\to\your\assembly\folder'
-    assembly_file = 'sample_assembly.iam'
+    # Check if we have a real assembly file to work with
+    # Look for any .iam files in the current directory first
+    current_dir = os.getcwd()
+    iam_files = [f for f in os.listdir(current_dir) if f.endswith('.iam')]
+    
+    if iam_files:
+        assembly_path = current_dir
+        assembly_file = iam_files[0]
+        print(f"Found assembly file: {assembly_file}")
+    else:
+        # Use the example paths but create a new assembly if file doesn't exist
+        assembly_path = r'C:\path\to\your\assembly\folder'
+        assembly_file = 'sample_assembly.iam'
+        print(f"Using example paths - will create new assembly if file doesn't exist")
     
     try:
-        # Open the assembly
+        # Open the assembly (or create new one if file doesn't exist)
         assembly = iAssembly(path=assembly_path, prefix=assembly_file, overwrite=False)
         print(f"Opened assembly: {assembly_file}")
         
