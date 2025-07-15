@@ -1317,9 +1317,24 @@ class iAssembly(com_obj):
             full_path = os.path.join(path, prefix) if path else prefix
             if os.path.isfile(full_path):
                 try:
+                    # Set application settings to suppress assembly update dialogs
+                    try:
+                        self.invApp.SilentOperation = True
+                        # Also set options to automatically accept assembly updates
+                        self.invApp.Options.GeneralOptions.AutoUpdateAssemblyBefore = True
+                    except:
+                        pass  # Settings may not be available in all versions
+                    
                     self.invDoc = self.invApp.Documents.Open(full_path)
-                except:
-                    raise Exception('ERROR: Unable to open assembly file, check filetype and if file exists.')
+                    
+                    # Reset silent operation
+                    try:
+                        self.invApp.SilentOperation = False
+                    except:
+                        pass
+                        
+                except Exception as e:
+                    raise Exception(f'ERROR: Unable to open assembly file, check filetype and if file exists: {str(e)}')
                 if self.invDoc.DocumentType == constants.kAssemblyDocumentObject:
                     pass
                 else:
@@ -1357,8 +1372,25 @@ class iAssembly(com_obj):
         }
         
         if view_type.lower() in view_constants:
-            self.view.SetOrientation(ViewOrientationType=view_constants[view_type.lower()])
-            self.view.Fit()  # Fit the view to show all geometry
+            # For assemblies, use the Camera property to set orientation
+            try:
+                camera = self.view.Camera
+                camera.ViewOrientationType = view_constants[view_type.lower()]
+                camera.Apply()
+                self.view.Fit()  # Fit the view to show all geometry
+            except:
+                # Fallback approach: try direct method call
+                try:
+                    self.view.SetOrientation(ViewOrientationType=view_constants[view_type.lower()])
+                    self.view.Fit()
+                except:
+                    # Alternative approach: use the document's view management
+                    try:
+                        self.invAssemblyDoc.Views.Item(1).Camera.ViewOrientationType = view_constants[view_type.lower()]
+                        self.invAssemblyDoc.Views.Item(1).Camera.Apply()
+                        self.view.Fit()
+                    except Exception as e:
+                        raise Exception(f'ERROR: Unable to set view orientation for "{view_type}": {str(e)}')
         else:
             raise Exception(f'ERROR: Invalid view type "{view_type}". Valid types: {list(view_constants.keys())}')
     
