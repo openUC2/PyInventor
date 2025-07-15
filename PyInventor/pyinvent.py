@@ -1527,10 +1527,10 @@ class iAssembly(com_obj):
             # Method 2: Try using document's export capabilities
             if hasattr(self.invDoc, 'SaveAs'):
                 # First try BMP format as it's often more reliable
-                if image_format.lower() in ['bmp']:
-                    bmp_path = full_path.replace(f'.{image_format}', '.bmp')
+                if image_format.lower() in ['bmp', "png", 'jpg', 'jpeg', 'tif', 'tiff']:
+                    bmp_path = full_path#.replace(f'.{image_format}', '.bmp')
                     # Use a simple approach - export as BMP then convert if needed
-                    self.invDoc.SaveAs(bmp_path, False)
+                    self.invDoc.SaveAs(bmp_path, True)
                     if os.path.exists(bmp_path) and bmp_path != full_path:
                         # If we need a different format, copy the file
                         shutil.copy2(bmp_path, full_path)

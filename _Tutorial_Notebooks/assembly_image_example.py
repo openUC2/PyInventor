@@ -177,8 +177,8 @@ def custom_rendering_example():
     
     print("\n=== Custom Rendering Example ===")
     
-    assembly_path = r'C:\path\to\your\assembly\folder'
-    assembly_file = 'sample_assembly.iam'
+    assembly_path =  'C:\\Users\\benir\\Documents\\openUC2-CAD-new\\workspace\\ASS\\'
+    assembly_file = 'ASS - 2016 - CUBMIR45°90° - V04.iam'
     
     try:
         # Open the assembly
@@ -242,10 +242,10 @@ if __name__ == "__main__":
         # Run examples (comment out the ones you don't need)
         
         # Single assembly example
-        single_assembly_example()
+        #single_assembly_example()
         
         # Batch processing example
-        batch_processing_example()
+        #batch_processing_example()
         
         # Custom rendering example
         custom_rendering_example()
