@@ -1496,49 +1496,6 @@ class iAssembly(com_obj):
             # This is not critical for the overall functionality
             pass
     
-    def export_image(self, filename='', file_path='', image_format='png', width=1920, height=1080):
-        """
-        Export the current view as an image file.
-        
-        Args:
-            filename: Name for the image file (extension will be added if missing)
-            file_path: Directory path for the image file
-            image_format: Image format ('png', 'jpg', 'bmp', 'tif')
-            width: Image width in pixels
-            height: Image height in pixels
-        
-        Returns:
-            Full path to the exported image file
-        """
-        # Set up file path
-        if file_path == '' and self.file_path != '':
-            file_path = self.file_path
-        elif file_path == '' and self.file_path == '':
-            file_path = os.getcwd()
-        
-        # Set up filename
-        if filename == '':
-            base_name = self.f_name.split('.')[0] if self.f_name else 'assembly_image'
-            filename = f"{base_name}.{image_format}"
-        elif not filename.endswith(f'.{image_format}'):
-            filename = f"{filename}.{image_format}"
-        
-        full_path = os.path.join(file_path, filename)
-        
-        # Ensure directory exists
-        os.makedirs(file_path, exist_ok=True)
-        
-        # Export image using Inventor's API
-        try:
-            # Method 1: Try using the active view's SaveImage method
-            active_view = None
-            
-            # Get active view from document or application
-            if hasattr(self.invDoc, 'ActiveView'):
-                active_view = self.invDoc.ActiveView
-            elif hasattr(self.invApp, 'ActiveView'):
-                active_view = self.invApp.ActiveView
-            
     # ASSEMBLY IMAGE CREATION FUNCTIONALITY (from main branch)
     
     def export_image(self, filename='assembly_image.png', file_path='', 

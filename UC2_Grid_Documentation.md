@@ -2,28 +2,38 @@
 
 ## Overview
 
-PyInventor now supports creating complex UC2 assemblies in grid patterns using the new `iAssembly` class. This functionality allows you to place UC2 cubes (or any Inventor components) in a 50x50x55mm grid with specific positions and orientations.
+PyInventor now supports creating complex UC2 assemblies in grid patterns using the unified `iAssembly` class. This functionality allows you to place UC2 cubes (or any Inventor components) in a 50x50x55mm grid with specific positions and orientations.
 
-## Features
+**NEW**: The `iAssembly` class now combines UC2 grid assembly creation with assembly image generation capabilities, providing a complete solution for both creating and documenting UC2 assemblies.
 
+## Combined Features
+
+### UC2 Grid Assembly Features
 - **Grid-based component placement**: Place components at grid coordinates that automatically convert to real-world positions
 - **Flexible rotations**: Apply rotations around X, Y, and Z axes
 - **CSV import**: Define assemblies using CSV files for easy editing
 - **Multiple grid patterns**: Create rectangular grids, alternating patterns, and custom layouts
 - **Batch operations**: Place multiple components with a single function call
 
+### Assembly Image Generation Features  
+- **Six-perspective views**: Generate front, back, left, right, top, bottom views
+- **Multiple rendering options**: Realistic, wireframe, shaded with edge control
+- **Batch processing**: Process multiple assemblies automatically
+- **High-resolution export**: PNG, JPG, BMP, TIF formats with custom resolutions
+- **Organized output**: Automatic folder organization and consistent naming
+
 ## Getting Started
 
-### Basic Usage
+### Basic UC2 Grid Assembly
 
 ```python
 from PyInventor import iAssembly
 
-# Create a new assembly
+# Create a new assembly with UC2 grid functionality
 assembly = iAssembly(
     path='C:\\UC2_Assemblies',
     prefix='MyUC2Assembly.iam',
-    units='metric',  # Use metric for mm measurements
+    units='metric',  # Enable UC2 grid functionality with metric units
     overwrite=True
 )
 
@@ -46,6 +56,62 @@ assembly.place_component_at_grid(
 
 # Save the assembly
 assembly.save()
+```
+
+### Generate Images from Created Assembly
+
+```python
+# After creating the UC2 assembly, generate documentation images
+images = assembly.create_perspective_images(
+    base_filename='MyUC2Assembly',
+    output_path='C:\\UC2_Images',
+    views=['front', 'back', 'left', 'right', 'top', 'bottom'],
+    image_format='png',
+    width=1920,
+    height=1080,
+    realistic=True
+)
+
+print(f"Created {len(images)} documentation images")
+```
+
+### Complete Workflow Example
+
+```python
+from PyInventor import iAssembly
+
+# 1. Create UC2 assembly
+assembly = iAssembly('UC2_Complete_Demo.iam', units='metric', overwrite=True)
+assembly.set_grid_spacing(50.0, 50.0, 55.0)
+
+# 2. Define UC2 components
+components = [
+    {'file': 'Assembly_cube_lens.iam', 'grid_pos': (0, 0, 0), 'rotation': (0, 0, 0)},
+    {'file': 'Assembly_cube_mirror.iam', 'grid_pos': (1, 0, 0), 'rotation': (0, 90, 0)},
+    {'file': 'Assembly_cube_lens.iam', 'grid_pos': (0, 1, 0), 'rotation': (0, 0, 0)},
+]
+
+# 3. Create the assembly
+placed_components = assembly.create_uc2_grid_from_table(components)
+assembly.save()
+
+# 4. Generate documentation images
+realistic_images = assembly.create_perspective_images(
+    base_filename='UC2_Demo_realistic',
+    views=['front', 'back', 'left', 'right', 'top', 'bottom'],
+    realistic=True
+)
+
+wireframe_images = assembly.create_perspective_images(
+    base_filename='UC2_Demo_wireframe', 
+    views=['front', 'back', 'left', 'right', 'top', 'bottom'],
+    wireframe=True
+)
+
+# 5. Close assembly
+assembly.close()
+
+print("✅ UC2 assembly created and documented!")
 ```
 
 ### Using Component Tables
