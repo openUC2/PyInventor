@@ -5,7 +5,7 @@ __author__ = "Andrew Oriani"
 __copyright__ = "Copyright 2020"
 __credits__ = ["Andrew E. Oriani"]
 __license__ = "BSD-3-Clause"
-__version__ = "0.4"
+__version__ = "0.4.1"
 __maintainer__ = "Andrew Oriani Schusterlab"
 __email__ = "oriani@uchicago.edu"
 __url__ = r'schusterlab.uchicago.edu'
@@ -26,6 +26,6 @@ except (ImportError, ModuleNotFoundError):
     print('Xlwings module not installed, install glob module using: $ conda  install -c conda-forge xlwings ')
 
 from . import  pyinvent
-from .pyinvent import com_obj, structure, iPart, iAssembly, arc_pattern, circle_pattern 
+from .pyinvent import com_obj, structure, iPart, iAssembly, create_assembly_images_batch, arc_pattern, circle_pattern 
 
-__all__=['pyinvent', 'com_obj', 'structure', 'iPart', 'iAssembly', 'arc_pattern', 'circle_pattern']
+__all__=['pyinvent', 'com_obj', 'structure', 'iPart', 'iAssembly', 'create_assembly_images_batch', 'arc_pattern', 'circle_pattern']

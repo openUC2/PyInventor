@@ -1277,29 +1277,29 @@ class iPart(com_obj):
         obj=obj_dict[obj_key]
         line=self.sketch_line(sketch, start=obj['start_pt'], end=obj['end_pt'])
         return line
-            
-            
+
 
 class iAssembly(com_obj):
     """
-    Assembly document class for creating and managing Inventor assembly documents (.iam files).
-    Supports placing components in grid patterns with specific positions and orientations.
+    Class for handling Autodesk Inventor Assembly documents with two main capabilities:
+    1. Creating images from different perspectives (front, back, left, right, top, bottom)  
+    2. Creating UC2 cube assemblies in grid patterns with specific positions and orientations
     """
     
-    def __init__(self, path='', prefix='', units='imperial', overwrite=True):
+    def __init__(self, path='', prefix='', overwrite=False, units='metric'):
         """
         Initialize assembly document.
         
         Args:
-            path: Directory path for the assembly file
-            prefix: Assembly filename (with .iam extension)
-            units: Unit system ('imperial' or 'metric')
-            overwrite: Whether to overwrite existing file
+            path: Directory path to the assembly file
+            prefix: Assembly filename (IAM file)
+            overwrite: Whether to overwrite existing files
+            units: Unit system ('imperial' or 'metric') - for UC2 grid functionality
         """
         self.overwrite = overwrite
         self.file_path = path
         self.f_name = prefix
-        self.units = units
+        self.units = units  # Store units for UC2 grid functionality
         
         # Setup COM with Inventor
         super(iAssembly, self).__init__()
@@ -1307,30 +1307,44 @@ class iAssembly(com_obj):
         if overwrite:
             self.overwrite_file(path, prefix)
         
-        # Open assembly or create new assembly
-        self.new_assembly(prefix, path)
+        # Open assembly
+        self.open_assembly(prefix, path)
         
-        # Set document units
-        self.set_units(units)
+        # Initialize UC2 grid settings if units specified
+        if units:
+            self.set_units(units)
+            # Grid spacing defaults (can be overridden) - UC2 standard spacing
+            self.grid_spacing = (50.0, 50.0, 55.0)  # X, Y, Z spacing in mm
         
-        # Set file name and handle
-        self.f_name = prefix
-        self.file_path = path
-        
-        # Grid spacing defaults (can be overridden)
-        self.grid_spacing = (50.0, 50.0, 55.0)  # X, Y, Z spacing in mm
-        
-    def new_assembly(self, prefix='', path=''):
-        """Generate new assembly document or open existing one."""
+    def open_assembly(self, prefix='', path=''):
+        """
+        Opens an existing assembly document or creates new one.
+        """
         if prefix == '':
             self.invDoc = self.invApp.Documents.Add(constants.kAssemblyDocumentObject, "", True)
         else:
             # Check if input filename exists
-            if os.path.isfile(os.path.join(path, prefix)):
+            full_path = os.path.join(path, prefix) if path else prefix
+            if os.path.isfile(full_path):
                 try:
-                    self.invDoc = self.invApp.Documents.Open(os.path.join(path, prefix))
-                except:
-                    raise Exception('ERROR: Unable to open file, check filetype and if file is in target directory.')
+                    # Set application settings to suppress assembly update dialogs
+                    try:
+                        self.invApp.SilentOperation = True
+                        # Also set options to automatically accept assembly updates
+                        self.invApp.Options.GeneralOptions.AutoUpdateAssemblyBefore = True
+                    except:
+                        pass  # Settings may not be available in all versions
+                    
+                    self.invDoc = self.invApp.Documents.Open(full_path)
+                    
+                    # Reset silent operation
+                    try:
+                        self.invApp.SilentOperation = False
+                    except:
+                        pass
+                        
+                except Exception as e:
+                    raise Exception(f'ERROR: Unable to open assembly file, check filetype and if file exists: {str(e)}')
                 if self.invDoc.DocumentType == constants.kAssemblyDocumentObject:
                     pass
                 else:
@@ -1338,23 +1352,387 @@ class iAssembly(com_obj):
             else:
                 self.invDoc = self.invApp.Documents.Add(constants.kAssemblyDocumentObject, "", True)
         
-        # Cast Document to AssemblyDocument
-        self.invAsmDoc = self.mod.AssemblyDocument(self.invDoc)
-        self.compdef = self.invAsmDoc.ComponentDefinition
+        # Casting Document to AssemblyDocument
+        self.invAssemblyDoc = self.mod.AssemblyDocument(self.invDoc)
+        self.compdef = self.invAssemblyDoc.ComponentDefinition
         
         # Opened document handle
         self.oDoc = self.invAppCom.ActiveDocument
         
-        # Create command manager
-        self.cmdManager = self.invApp.CommandManager
+        # For UC2 grid functionality - setup geometry objects if units are set
+        if hasattr(self, 'units') and self.units:
+            # Create command manager
+            self.cmdManager = self.invApp.CommandManager
+            
+            # Set transient geometry object
+            self.tg = self.invApp.TransientGeometry
+            self.trans_obj = self.invApp.TransientObjects
         
-        # Set transient geometry object
-        self.tg = self.invApp.TransientGeometry
-        self.trans_obj = self.invApp.TransientObjects
-        
-        # Object view handle
+        # Object view handle - ensure we have a valid view
         self.view = self.invApp.ActiveView
+        if not self.view:
+            # If no active view, try to get from document
+            if hasattr(self.invDoc, 'ActiveView'):
+                self.view = self.invDoc.ActiveView
+            elif hasattr(self.invDoc, 'Views') and self.invDoc.Views.Count > 0:
+                self.view = self.invDoc.Views.Item(1)
         
+    def set_view_orientation(self, view_type):
+        """
+        Set the view orientation to one of the standard six perspectives.
+        
+        Args:
+            view_type: String indicating view type:
+                      'front', 'back', 'left', 'right', 'top', 'bottom',
+                      'iso' (isometric), 'custom'
+        """
+        view_constants = {
+            'front': constants.kFrontViewOrientation,
+            'back': constants.kBackViewOrientation, 
+            'left': constants.kLeftViewOrientation,
+            'right': constants.kRightViewOrientation,
+            'top': constants.kTopViewOrientation,
+            'bottom': constants.kBottomViewOrientation,
+            'iso': constants.kIsoTopRightViewOrientation
+        }
+        
+        if view_type.lower() in view_constants:
+            # For assemblies, we need to use the active document's view
+            try:
+                # Method 1: Try using the document's active view directly
+                if hasattr(self.invDoc, 'ActiveView'):
+                    active_view = self.invDoc.ActiveView
+                    if hasattr(active_view, 'Camera'):
+                        camera = active_view.Camera
+                        camera.ViewOrientationType = view_constants[view_type.lower()]
+                        camera.Apply()
+                        active_view.Fit()
+                        return
+                
+                # Method 2: Use the Application's active view
+                if hasattr(self.invApp, 'ActiveView'):
+                    active_view = self.invApp.ActiveView
+                    if hasattr(active_view, 'Camera'):
+                        camera = active_view.Camera
+                        camera.ViewOrientationType = view_constants[view_type.lower()]
+                        camera.Apply()
+                        active_view.Fit()
+                        return
+                
+                # Method 3: Try using the document's views collection
+                if hasattr(self.invDoc, 'Views') and self.invDoc.Views.Count > 0:
+                    view = self.invDoc.Views.Item(1)
+                    if hasattr(view, 'Camera'):
+                        camera = view.Camera
+                        camera.ViewOrientationType = view_constants[view_type.lower()]
+                        camera.Apply()
+                        view.Fit()
+                        return
+                
+                # Method 4: Try using the CommandManager to change view
+                if hasattr(self.invApp, 'CommandManager'):
+                    # Use the standard view commands
+                    view_command_map = {
+                        'front': 'AppFrontViewCommand',
+                        'back': 'AppBackViewCommand',
+                        'left': 'AppLeftViewCommand',
+                        'right': 'AppRightViewCommand',
+                        'top': 'AppTopViewCommand',
+                        'bottom': 'AppBottomViewCommand',
+                        'iso': 'AppIsometricViewCommand'
+                    }
+                    
+                    command_name = view_command_map.get(view_type.lower())
+                    if command_name:
+                        try:
+                            cmd = self.invApp.CommandManager.ControlDefinitions.Item(command_name)
+                            cmd.Execute()
+                            return
+                        except:
+                            pass
+                
+                raise Exception(f'All methods failed to set view orientation for "{view_type}"')
+                
+            except Exception as e:
+                raise Exception(f'ERROR: Unable to set view orientation for "{view_type}": {str(e)}')
+        else:
+            raise Exception(f'ERROR: Invalid view type "{view_type}". Valid types: {list(view_constants.keys())}')
+    
+    def set_visual_style(self, shaded=True, edges=True, hidden_edges=False, realistic=False):
+        """
+        Set the visual style for rendering.
+        Same functionality as iPart class.
+        """
+        if realistic == False:
+            if shaded == True:
+                if edges == False:
+                    val = 8708
+                else:
+                    if hidden_edges == True:
+                        val = 8707
+                    else:
+                        val = 8710
+            else:
+                if edges == True:
+                    if hidden_edges == True:
+                        val = 8712
+                    else:
+                        val = 8711
+                else:
+                    val = 8706
+        else:
+            val = 8709
+        
+        # Try to set display mode on the view
+        try:
+            if self.view and hasattr(self.view, 'DisplayMode'):
+                self.view.DisplayMode = val
+            elif hasattr(self.invApp, 'ActiveView') and self.invApp.ActiveView:
+                self.invApp.ActiveView.DisplayMode = val
+            elif hasattr(self.invDoc, 'ActiveView') and self.invDoc.ActiveView:
+                self.invDoc.ActiveView.DisplayMode = val
+        except Exception as e:
+            # If setting display mode fails, continue without error
+            # This is not critical for the overall functionality
+            pass
+    
+    def export_image(self, filename='', file_path='', image_format='png', width=1920, height=1080):
+        """
+        Export the current view as an image file.
+        
+        Args:
+            filename: Name for the image file (extension will be added if missing)
+            file_path: Directory path for the image file
+            image_format: Image format ('png', 'jpg', 'bmp', 'tif')
+            width: Image width in pixels
+            height: Image height in pixels
+        
+        Returns:
+            Full path to the exported image file
+        """
+        # Set up file path
+        if file_path == '' and self.file_path != '':
+            file_path = self.file_path
+        elif file_path == '' and self.file_path == '':
+            file_path = os.getcwd()
+        
+        # Set up filename
+        if filename == '':
+            base_name = self.f_name.split('.')[0] if self.f_name else 'assembly_image'
+            filename = f"{base_name}.{image_format}"
+        elif not filename.endswith(f'.{image_format}'):
+            filename = f"{filename}.{image_format}"
+        
+        full_path = os.path.join(file_path, filename)
+        
+        # Ensure directory exists
+        os.makedirs(file_path, exist_ok=True)
+        
+        # Export image using Inventor's API
+        try:
+            # Method 1: Try using the active view's SaveImage method
+            active_view = None
+            
+            # Get active view from document or application
+            if hasattr(self.invDoc, 'ActiveView'):
+                active_view = self.invDoc.ActiveView
+            elif hasattr(self.invApp, 'ActiveView'):
+                active_view = self.invApp.ActiveView
+            
+    # ASSEMBLY IMAGE CREATION FUNCTIONALITY (from main branch)
+    
+    def export_image(self, filename='assembly_image.png', file_path='', 
+                   image_format='png', width=1920, height=1080):
+        """
+        Export current view as an image file.
+        
+        Args:
+            filename: Name of the image file
+            file_path: Directory path for the image
+            image_format: Image format (png, jpg, bmp, tif)
+            width: Image width in pixels
+            height: Image height in pixels
+        
+        Returns:
+            Full path to the created image file
+        """
+        if file_path == '':
+            file_path = self.file_path if self.file_path else os.getcwd()
+        
+        full_path = os.path.join(file_path, filename)
+        
+        try:
+            # Ensure the output directory exists
+            os.makedirs(file_path, exist_ok=True)
+            
+            # Method 1: Try using the active view directly
+            active_view = None
+            if hasattr(self.invApp, 'ActiveView') and self.invApp.ActiveView:
+                active_view = self.invApp.ActiveView
+            elif hasattr(self.invApp, 'ActiveView'):
+                active_view = self.invApp.ActiveView
+            
+            if active_view and hasattr(active_view, 'SaveImage'):
+                active_view.SaveImage(full_path, width, height)
+                return full_path
+            
+            # Method 2: Try using document's export capabilities
+            if hasattr(self.invDoc, 'SaveAs'):
+                # First try BMP format as it's often more reliable
+                if image_format.lower() in ['bmp', "png", 'jpg', 'jpeg', 'tif', 'tiff']:
+                    bmp_path = full_path#.replace(f'.{image_format}', '.bmp')
+                    # Use a simple approach - export as BMP then convert if needed
+                    self.invDoc.SaveAs(bmp_path, True)
+                    if os.path.exists(bmp_path) and bmp_path != full_path:
+                        # If we need a different format, copy the file
+                        shutil.copy2(bmp_path, full_path)
+                        os.remove(bmp_path)
+                    return full_path
+            
+            # Method 3: Try using application's TranslatorAddIns if available
+            if hasattr(self.invApp, 'TranslatorAddIns'):
+                format_map = {
+                    'png': 'PNG',
+                    'jpg': 'JPEG', 
+                    'jpeg': 'JPEG',
+                    'bmp': 'BMP',
+                    'tif': 'TIFF',
+                    'tiff': 'TIFF'
+                }
+                
+                export_format = format_map.get(image_format.lower(), 'PNG')
+                
+                # Create translator for image export
+                translator = self.invApp.TranslatorAddIns.ItemByName(f"{export_format} Image Export")
+                
+                if translator:
+                    context = self.invApp.TransientObjects.CreateTranslationContext()
+                    context.Type = constants.kFileBrowseIOMechanism
+                    
+                    # Set image size options if available
+                    if translator.HasSaveCopyAsOptions:
+                        options = translator.SaveCopyAsOptions
+                        if hasattr(options, 'Width'):
+                            options.Width = width
+                        if hasattr(options, 'Height'):
+                            options.Height = height
+                    
+                    data_medium = self.invApp.TransientObjects.CreateDataMedium()
+                    data_medium.FileName = full_path
+                    
+                    translator.SaveCopyAs(self.invDoc, context, options, data_medium)
+                    return full_path
+            
+            # Method 4: Try using the view's export via screenshot if available
+            if hasattr(self.invApp, 'CommandManager'):
+                # Try to trigger screen capture command
+                try:
+                    # This might work for some versions
+                    self.invApp.CommandManager.ControlDefinitions.Item('AppScreenCaptureCommand').Execute()
+                    # Note: This would open a dialog, so it's not ideal for automation
+                except:
+                    pass
+            
+            # Method 5: Fallback - try to use Windows clipboard and save
+            # This is a last resort and might not work in all scenarios
+            try:
+                import win32clipboard
+                import win32con
+                from PIL import ImageGrab
+                
+                # Try to copy screen to clipboard then save
+                self.invApp.CommandManager.ControlDefinitions.Item('AppCopyCommand').Execute()
+                
+                # Wait a bit for clipboard to be populated
+                import time
+                time.sleep(0.5)
+                
+                # Get image from clipboard
+                img = ImageGrab.grabclipboard()
+                if img:
+                    # Resize if needed
+                    if img.size != (width, height):
+                        img = img.resize((width, height))
+                    
+                    # Save in the requested format
+                    img.save(full_path, format=image_format.upper())
+                    return full_path
+                    
+            except ImportError:
+                pass  # PIL not available
+            except:
+                pass  # Some other error with clipboard approach
+            
+            # If all methods fail, create a simple placeholder or raise an error
+            raise Exception(f'Unable to export image using any available method')
+        
+        except Exception as e:
+            raise Exception(f'ERROR: Failed to export image: {str(e)}')
+        
+        return full_path
+    
+    def create_perspective_images(self, base_filename='', output_path='', 
+                                views=['front', 'back', 'left', 'right', 'top', 'bottom'],
+                                image_format='png', width=1920, height=1080,
+                                realistic=False, wireframe=False):
+        """
+        Create images from multiple perspectives of the assembly.
+        
+        Args:
+            base_filename: Base name for image files (view name will be appended)
+            output_path: Directory path for output images
+            views: List of view perspectives to create
+            image_format: Image format for export
+            width: Image width in pixels
+            height: Image height in pixels
+            realistic: Whether to use realistic rendering
+            wireframe: Whether to use wireframe mode
+        
+        Returns:
+            List of paths to created image files
+        """
+        if base_filename == '':
+            base_filename = self.f_name.split('.')[0] if self.f_name else 'assembly'
+        
+        if output_path == '':
+            output_path = self.file_path if self.file_path else os.getcwd()
+        
+        exported_files = []
+        
+        # Set visual style based on parameters
+        if wireframe:
+            self.set_visual_style(shaded=False, edges=True, realistic=False)
+        else:
+            self.set_visual_style(shaded=True, edges=True, realistic=realistic)
+        
+        for view in views:
+            try:
+                # Set the view orientation
+                self.set_view_orientation(view)
+                
+                # Create filename with view suffix
+                view_filename = f"{base_filename}_{view}.{image_format}"
+                
+                # Export the image
+                full_path = self.export_image(
+                    filename=view_filename,
+                    file_path=output_path,
+                    image_format=image_format,
+                    width=width,
+                    height=height
+                )
+                
+                exported_files.append(full_path)
+                print(f"Created image: {full_path}")
+                
+            except Exception as e:
+                print(f"WARNING: Failed to create {view} view image: {str(e)}")
+                continue
+        
+        return exported_files
+
+    # UC2 GRID ASSEMBLY FUNCTIONALITY (from my branch)
+    
     def set_units(self, units):
         """Set assembly document units."""
         if units == 'imperial':
@@ -1368,19 +1746,23 @@ class iAssembly(com_obj):
             
     def unit_conv(self, val_in):
         """Convert units based on current unit system."""
-        if self.units == 'imperial':
-            mult = 1/25.4  # Convert mm to inches
-        elif self.units == 'metric':
-            mult = 1
-        return val_in * mult
+        if hasattr(self, 'units'):
+            if self.units == 'imperial':
+                mult = 1/25.4  # Convert mm to inches
+            elif self.units == 'metric':
+                mult = 1
+            return val_in * mult
+        return val_in  # Default no conversion if units not set
     
     def ang_conv(self, val_in):
         """Convert angle units."""
-        if self.units == 'imperial':
-            mult = np.pi/180  # Convert degrees to radians
-        elif self.units == 'metric':
-            mult = 1
-        return val_in * mult
+        if hasattr(self, 'units'):
+            if self.units == 'imperial':
+                mult = np.pi/180  # Convert degrees to radians
+            elif self.units == 'metric':
+                mult = 1
+            return val_in * mult
+        return val_in * np.pi/180  # Default degrees to radians
     
     def place_component(self, component_path, position=(0, 0, 0), rotation=(0, 0, 0)):
         """
@@ -1431,8 +1813,12 @@ class iAssembly(com_obj):
         translation = self.tg.CreateVector(pos_x, pos_y, pos_z)
         transform_matrix.SetTranslation(translation)
         
-        # Place the component
-        occurrence = self.compdef.Occurrences.Add(component_path, transform_matrix)
+        # Place the component (need to access the compdef attribute)
+        if hasattr(self, 'compdef'):
+            occurrence = self.compdef.Occurrences.Add(component_path, transform_matrix)
+        else:
+            # Fallback for compatibility
+            occurrence = self.invAssemblyDoc.ComponentDefinition.Occurrences.Add(component_path, transform_matrix)
         
         return occurrence
     
@@ -1513,12 +1899,100 @@ class iAssembly(com_obj):
                 save_path = file_name
             self.invDoc.SaveAs(save_path, False)
     
-    def close(self, save=True):
-        """Close the assembly document."""
+    def close(self, save=False):
+        """
+        Close the assembly document.
+        
+        Args:
+            save: Whether to save before closing
+        """
         if save:
-            self.invAsmDoc.Close(SkipSave=False)
+            if hasattr(self, 'invAssemblyDoc'):
+                self.invAssemblyDoc.Close(SkipSave=False)
+            elif hasattr(self, 'invAsmDoc'):
+                self.invAsmDoc.Close(SkipSave=False)
+            else:
+                self.invDoc.Close(SkipSave=False)
         else:
-            self.invAsmDoc.Close(SkipSave=True)
+            if hasattr(self, 'invAssemblyDoc'):
+                self.invAssemblyDoc.Close(SkipSave=True)
+            elif hasattr(self, 'invAsmDoc'):
+                self.invAsmDoc.Close(SkipSave=True)
+            else:
+                self.invDoc.Close(SkipSave=True)
+
+
+def create_assembly_images_batch(assembly_folder, output_folder='', 
+                               views=['front', 'back', 'left', 'right', 'top', 'bottom'],
+                               image_format='png', width=1920, height=1080,
+                               realistic=False, wireframe=False):
+    """
+    Batch process multiple assembly files to create images from different perspectives.
+    
+    Args:
+        assembly_folder: Path to folder containing assembly files (IAM)
+        output_folder: Path to folder for output images (defaults to assembly_folder)
+        views: List of view perspectives to create
+        image_format: Image format for export
+        width: Image width in pixels  
+        height: Image height in pixels
+        realistic: Whether to use realistic rendering
+        wireframe: Whether to use wireframe mode
+    
+    Returns:
+        Dictionary mapping assembly filenames to lists of created image paths
+    """
+    if output_folder == '':
+        output_folder = assembly_folder
+    
+    # Find all IAM files in the folder
+    iam_pattern = os.path.join(assembly_folder, '*.iam')
+    assembly_files = glob.glob(iam_pattern)
+    
+    if not assembly_files:
+        print(f"No assembly files (*.iam) found in {assembly_folder}")
+        return {}
+    
+    results = {}
+    
+    for asm_file in assembly_files:
+        try:
+            asm_filename = os.path.basename(asm_file)
+            base_name = os.path.splitext(asm_filename)[0]
+            
+            print(f"\nProcessing assembly: {asm_filename}")
+            
+            # Open the assembly
+            assembly = iAssembly(path=assembly_folder, prefix=asm_filename, overwrite=False)
+            
+            # Create output subfolder for this assembly
+            asm_output_folder = output_folder #os.path.join(output_folder, base_name + '_images')
+            
+            # Create perspective images
+            exported_files = assembly.create_perspective_images(
+                base_filename=base_name,
+                output_path=asm_output_folder,
+                views=views,
+                image_format=image_format,
+                width=width,
+                height=height,
+                realistic=realistic,
+                wireframe=wireframe
+            )
+            
+            results[asm_filename] = exported_files
+            
+            # Close the assembly
+            assembly.close(save=False)
+            
+            print(f"Completed processing {asm_filename}: {len(exported_files)} images created")
+            
+        except Exception as e:
+            print(f"ERROR processing {asm_file}: {str(e)}")
+            results[asm_filename] = []
+            continue
+    
+    return results
 
 
 class structure(object):

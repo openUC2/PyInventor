@@ -4,8 +4,16 @@ which is natively written in VBA. This package ONLY works on windows machines
 (or MacOS running windows in bootcamp) and will work on Inventor 2017 or later 
 (although it is most thoroughly tested on Inventor 2019, which is recommended).
 This package requires no dependencies outside of Python 3 through the Anaconda
-distribution. This package can only create 3D parts (no assemblies) and still
-lacks some of the 3D functionality (no lofts, 3D sketches, or chamfers, among 
+distribution. 
+
+NEW in v0.4.1: Added assembly support and image creation capabilities!
+- Create images from assemblies in six different perspectives (front, back, left, right, top, bottom)
+- Choose rendering options (realistic, wireframe, shaded)
+- Batch process multiple assemblies in a folder
+- High-resolution image export in multiple formats (PNG, JPG, BMP, TIF)
+
+This package can create 3D parts and now supports assemblies with image generation.
+For parts, it still lacks some 3D functionality (no lofts, 3D sketches, or chamfers, among 
 others). To see the full functionality check the demos in the _Tutorial_Notebook
 folder. Have fun and shoot me an email with questions:
 
@@ -28,7 +36,7 @@ with open(here / "requirements.txt", encoding="utf-8") as f:
 doclines = __doc__.split('\n')
 
 setup(name='PyInventor',
-      version='0.4',
+      version='0.4.1',
       description = doclines[0],
       long_description=long_description,
       long_description_content_type="text/markdown",
