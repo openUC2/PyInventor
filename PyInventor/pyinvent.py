@@ -1736,7 +1736,7 @@ def create_assembly_images_batch(assembly_folder, output_folder='',
             assembly = iAssembly(path=assembly_folder, prefix=asm_filename, overwrite=False)
             
             # Create output subfolder for this assembly
-            asm_output_folder = os.path.join(output_folder, base_name + '_images')
+            asm_output_folder = output_folder #os.path.join(output_folder, base_name + '_images')
             
             # Create perspective images
             exported_files = assembly.create_perspective_images(

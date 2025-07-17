@@ -110,8 +110,9 @@ def batch_processing_example():
     print("\n=== Batch Assembly Processing Example ===")
     
     # Folder containing multiple assembly files
-    assembly_folder = r'C:\path\to\assembly\folder'
-    output_folder = r'C:\path\to\output\folder'
+    assembly_folder =  'C:\\Users\\benir\\Documents\\openUC2-CAD-new\\workspace\\ASS\\'
+    assembly_folder =  'C:\\Users\\benir\\Documents\\openUC2-CAD-new\\workspace\\KIT\\'
+    output_folder =   os.path.join(assembly_folder, 'output')
     
     try:
         # Process all assemblies with realistic rendering
@@ -119,7 +120,7 @@ def batch_processing_example():
         realistic_results = create_assembly_images_batch(
             assembly_folder=assembly_folder,
             output_folder=os.path.join(output_folder, 'realistic'),
-            views=['front', 'back', 'left', 'right', 'top', 'bottom'],
+            views=['iso'], #'front', 'back', 'left', 'right', 'top', 'bottom'],
             image_format='png',
             width=1920,
             height=1080,
@@ -245,10 +246,10 @@ if __name__ == "__main__":
         #single_assembly_example()
         
         # Batch processing example
-        #batch_processing_example()
+        batch_processing_example()
         
         # Custom rendering example
-        custom_rendering_example()
+        # custom_rendering_example()
         
     except Exception as e:
         print(f"Example execution error: {str(e)}")
