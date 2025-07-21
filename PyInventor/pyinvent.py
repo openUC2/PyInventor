@@ -9,6 +9,7 @@ import warnings
 import re
 import sys
 import shutil
+import json
 from scipy.special import binom
 
 '''
@@ -1844,6 +1845,51 @@ class iAssembly(com_obj):
                 print(f"Failed to place {comp_name}: {str(e)}")
                 
         return placed_components
+    
+    def load_from_optikit_layout(self, json_file_path):
+        """
+        Load UC2 component layout from optikit-layout.json format.
+        
+        Args:
+            json_file_path: Path to the JSON layout file with optikit format
+                
+        Returns:
+            List of placed ComponentOccurrence objects
+        """
+        try:
+            with open(json_file_path, 'r') as f:
+                layout_data = json.load(f)
+            
+            # Extract uc2_components array
+            if 'uc2_components' not in layout_data:
+                raise ValueError("JSON file must contain 'uc2_components' array")
+            
+            components = layout_data['uc2_components']
+            
+            # Convert to format expected by create_uc2_grid_from_table
+            component_table = []
+            for comp in components:
+                component_entry = {
+                    'name': comp.get('name', 'Unknown'),
+                    'file': comp['file'],
+                    'grid_pos': tuple(comp['grid_pos']),  # Convert array to tuple
+                    'rotation': tuple(comp['rotation'])   # Convert array to tuple
+                }
+                component_table.append(component_entry)
+            
+            print(f"Loaded {len(component_table)} components from {json_file_path}")
+            
+            # Use existing method to place components
+            return self.create_uc2_grid_from_table(component_table)
+            
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Layout file not found: {json_file_path}")
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON format in {json_file_path}: {str(e)}")
+        except KeyError as e:
+            raise ValueError(f"Missing required field in JSON: {str(e)}")
+        except Exception as e:
+            raise Exception(f"Error loading optikit layout: {str(e)}")
     
     def save(self, file_path='', file_name=''):
         """Save the assembly document."""

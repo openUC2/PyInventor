@@ -211,6 +211,52 @@ component = {
 }
 ```
 
+### OptiKit Layout JSON Format
+
+PyInventor now supports the standardized OpenUC2 OptiKit layout format using `load_from_optikit_layout()`:
+
+```python
+# Load components from optikit-layout.json
+assembly = iAssembly('UC2_OptiKit_Assembly.iam', units='metric')
+assembly.set_grid_spacing(50.0, 50.0, 55.0)
+
+# Load and place all components from JSON layout
+placed_components = assembly.load_from_optikit_layout('optikit-layout.json')
+assembly.save()
+```
+
+**JSON Format Structure**:
+```json
+{
+  "uc2_components": [
+    {
+      "name": "Basic_Cube_00",
+      "file": "ASS - 2000 - CUB - V04.iam", 
+      "grid_pos": [2, 3, 0],
+      "rotation": [0, 0, 0],
+      "moduleId": "cube-1x1",
+      "originalName": "Basic Cube",
+      "description": "Basic 1x1 cube module",
+      "params": {"price": 10}
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "created": "2025-07-21T10:15:30.863Z",
+    "software": "OpenUC2 OptiKit"
+  }
+}
+```
+
+**Required Fields**:
+- `name`: Component identifier
+- `file`: Assembly filename (.iam file)
+- `grid_pos`: Array of [x, y, z] grid coordinates  
+- `rotation`: Array of [rx, ry, rz] rotation angles in degrees
+
+**Optional Fields**: 
+- `moduleId`, `originalName`, `description`, `params`: Metadata (preserved but not used for placement)
+
 ## Grid Coordinate System
 
 - **Grid coordinates** are integers (0, 1, 2, ...)
