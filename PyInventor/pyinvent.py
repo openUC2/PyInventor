@@ -1713,14 +1713,9 @@ class iAssembly(com_obj):
         return val_in  # Default no conversion if units not set
     
     def ang_conv(self, val_in):
-        """Convert angle units."""
-        if hasattr(self, 'units'):
-            if self.units == 'imperial':
-                mult = np.pi/180  # Convert degrees to radians
-            elif self.units == 'metric':
-                mult = 1
-            return val_in * mult
-        return val_in * np.pi/180  # Default degrees to radians
+        """Convert angle units from degrees to radians for Inventor COM API."""
+        # Inventor's SetToRotation always expects radians regardless of document units
+        return val_in * np.pi/180
     
     def place_component(self, component_path, position=(0, 0, 0), rotation=(0, 0, 0)):
         """
