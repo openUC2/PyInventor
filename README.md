@@ -47,6 +47,29 @@ results = create_assembly_images_batch(
 
 See `_Tutorial_Notebooks/assembly_image_example.py` and `ASSEMBLY_IMAGES.md` for complete examples and documentation.
 
+### UC2 Grid Assembly Support
+PyInventor now supports creating complex UC2 assemblies in grid patterns:
+
+- **Grid-based Component Placement** - Place components in 50x50x55mm grids with simple coordinates
+- **Flexible Rotations** - Apply rotations around X, Y, and Z axes
+- **CSV Import/Export** - Define assemblies using CSV files for easy editing
+- **Batch Operations** - Place multiple components with single function calls
+
+Example usage:
+```python
+# Create UC2 assembly with grid spacing
+assembly = iAssembly('UC2_Assembly.iam', units='metric')
+assembly.set_grid_spacing(50.0, 50.0, 55.0)
+
+# Place lens at origin, mirror at (50,0,0) with 90° rotation
+assembly.place_component_at_grid('Assembly_cube_lens.iam', 0, 0, 0)
+assembly.place_component_at_grid('Assembly_cube_mirror.iam', 1, 0, 0, rotation=(0, 90, 0))
+
+assembly.save()
+```
+
+See `UC2_Grid_Documentation.md` and `_Tutorial_Notebooks/uc2_grid_example.py` for complete examples.
+
 ### Body Management and Export
 PyInventor now supports working with multiple bodies in existing IPT files:
 

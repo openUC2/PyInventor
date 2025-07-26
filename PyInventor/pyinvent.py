@@ -9,6 +9,7 @@ import warnings
 import re
 import sys
 import shutil
+import json
 from scipy.special import binom
 
 '''
@@ -1281,10 +1282,12 @@ class iPart(com_obj):
 
 class iAssembly(com_obj):
     """
-    Class for handling Autodesk Inventor Assembly documents and creating images from different perspectives.
+    Class for handling Autodesk Inventor Assembly documents with two main capabilities:
+    1. Creating images from different perspectives (front, back, left, right, top, bottom)  
+    2. Creating UC2 cube assemblies in grid patterns with specific positions and orientations
     """
     
-    def __init__(self, path='', prefix='', overwrite=False):
+    def __init__(self, path='', prefix='', overwrite=False, units='metric'):
         """
         Initialize assembly document.
         
@@ -1292,10 +1295,12 @@ class iAssembly(com_obj):
             path: Directory path to the assembly file
             prefix: Assembly filename (IAM file)
             overwrite: Whether to overwrite existing files
+            units: Unit system ('imperial' or 'metric') - for UC2 grid functionality
         """
         self.overwrite = overwrite
         self.file_path = path
         self.f_name = prefix
+        self.units = units  # Store units for UC2 grid functionality
         
         # Setup COM with Inventor
         super(iAssembly, self).__init__()
@@ -1305,6 +1310,12 @@ class iAssembly(com_obj):
         
         # Open assembly
         self.open_assembly(prefix, path)
+        
+        # Initialize UC2 grid settings if units specified
+        if units:
+            self.set_units(units)
+            # Grid spacing defaults (can be overridden) - UC2 standard spacing
+            self.grid_spacing = (50.0, 50.0, 55.0)  # X, Y, Z spacing in mm
         
     def open_assembly(self, prefix='', path=''):
         """
@@ -1348,6 +1359,15 @@ class iAssembly(com_obj):
         
         # Opened document handle
         self.oDoc = self.invAppCom.ActiveDocument
+        
+        # For UC2 grid functionality - setup geometry objects if units are set
+        if hasattr(self, 'units') and self.units:
+            # Create command manager
+            self.cmdManager = self.invApp.CommandManager
+            
+            # Set transient geometry object
+            self.tg = self.invApp.TransientGeometry
+            self.trans_obj = self.invApp.TransientObjects
         
         # Object view handle - ensure we have a valid view
         self.view = self.invApp.ActiveView
@@ -1477,46 +1497,36 @@ class iAssembly(com_obj):
             # This is not critical for the overall functionality
             pass
     
-    def export_image(self, filename='', file_path='', image_format='png', width=1920, height=1080):
+    # ASSEMBLY IMAGE CREATION FUNCTIONALITY (from main branch)
+    
+    def export_image(self, filename='assembly_image.png', file_path='', 
+                   image_format='png', width=1920, height=1080):
         """
-        Export the current view as an image file.
+        Export current view as an image file.
         
         Args:
-            filename: Name for the image file (extension will be added if missing)
-            file_path: Directory path for the image file
-            image_format: Image format ('png', 'jpg', 'bmp', 'tif')
+            filename: Name of the image file
+            file_path: Directory path for the image
+            image_format: Image format (png, jpg, bmp, tif)
             width: Image width in pixels
             height: Image height in pixels
         
         Returns:
-            Full path to the exported image file
+            Full path to the created image file
         """
-        # Set up file path
-        if file_path == '' and self.file_path != '':
-            file_path = self.file_path
-        elif file_path == '' and self.file_path == '':
-            file_path = os.getcwd()
-        
-        # Set up filename
-        if filename == '':
-            base_name = self.f_name.split('.')[0] if self.f_name else 'assembly_image'
-            filename = f"{base_name}.{image_format}"
-        elif not filename.endswith(f'.{image_format}'):
-            filename = f"{filename}.{image_format}"
+        if file_path == '':
+            file_path = self.file_path if self.file_path else os.getcwd()
         
         full_path = os.path.join(file_path, filename)
         
-        # Ensure directory exists
-        os.makedirs(file_path, exist_ok=True)
-        
-        # Export image using Inventor's API
         try:
-            # Method 1: Try using the active view's SaveImage method
-            active_view = None
+            # Ensure the output directory exists
+            os.makedirs(file_path, exist_ok=True)
             
-            # Get active view from document or application
-            if hasattr(self.invDoc, 'ActiveView'):
-                active_view = self.invDoc.ActiveView
+            # Method 1: Try using the active view directly
+            active_view = None
+            if hasattr(self.invApp, 'ActiveView') and self.invApp.ActiveView:
+                active_view = self.invApp.ActiveView
             elif hasattr(self.invApp, 'ActiveView'):
                 active_view = self.invApp.ActiveView
             
@@ -1678,6 +1688,214 @@ class iAssembly(com_obj):
                 continue
         
         return exported_files
+
+    # UC2 GRID ASSEMBLY FUNCTIONALITY (from my branch)
+    
+    def set_units(self, units):
+        """Set assembly document units."""
+        if units == 'imperial':
+            self.invDoc.UnitsOfMeasure.LengthUnits = constants.kInchLengthUnits
+            self.invDoc.UnitsOfMeasure.AngleUnits = constants.kDegreeAngleUnits
+        elif units == 'metric':
+            self.invDoc.UnitsOfMeasure.LengthUnits = constants.kMillimeterLengthUnits
+            self.invDoc.UnitsOfMeasure.AngleUnits = constants.kRadianAngleUnits
+        else:
+            raise Exception('ERROR: Units must be either imperial or metric')
+            
+    def unit_conv(self, val_in):
+        """Convert units based on current unit system."""
+        if hasattr(self, 'units'):
+            if self.units == 'imperial':
+                mult = 1/25.4  # Convert mm to inches
+            elif self.units == 'metric':
+                mult = 1
+            return val_in * mult
+        return val_in  # Default no conversion if units not set
+    
+    def ang_conv(self, val_in):
+        """Convert angle units from degrees to radians for Inventor COM API."""
+        # Inventor's SetToRotation always expects radians regardless of document units
+        return val_in * np.pi/180
+    
+    def place_component(self, component_path, position=(0, 0, 0), rotation=(0, 0, 0)):
+        """
+        Place a component (part or assembly) at specified position with rotation.
+        
+        Args:
+            component_path: Full path to the component file (.ipt or .iam)
+            position: (x, y, z) position in current units
+            rotation: (rx, ry, rz) rotation angles in degrees
+            
+        Returns:
+            ComponentOccurrence object
+        """
+        if not os.path.exists(component_path):
+            raise Exception(f'ERROR: Component file not found: {component_path}')
+        
+        # Convert position to current units
+        pos_x = self.unit_conv(position[0])
+        pos_y = self.unit_conv(position[1])
+        pos_z = self.unit_conv(position[2])
+        
+        # Convert rotation angles
+        rot_x = self.ang_conv(rotation[0])
+        rot_y = self.ang_conv(rotation[1])
+        rot_z = self.ang_conv(rotation[2])
+        
+        # Create transformation matrix
+        transform_matrix = self.tg.CreateMatrix()
+        
+        # Apply rotations (order: Z, Y, X)
+        if rotation[2] != 0:  # Z rotation
+            z_axis = self.tg.CreateUnitVector(0, 0, 1)
+            transform_matrix.SetToRotation(rot_z, z_axis, self.tg.CreatePoint(0, 0, 0))
+        
+        if rotation[1] != 0:  # Y rotation
+            y_axis = self.tg.CreateUnitVector(0, 1, 0)
+            y_rotation = self.tg.CreateMatrix()
+            y_rotation.SetToRotation(rot_y, y_axis, self.tg.CreatePoint(0, 0, 0))
+            transform_matrix.PreMultiplyBy(y_rotation)
+            
+        if rotation[0] != 0:  # X rotation
+            x_axis = self.tg.CreateUnitVector(1, 0, 0)
+            x_rotation = self.tg.CreateMatrix()
+            x_rotation.SetToRotation(rot_x, x_axis, self.tg.CreatePoint(0, 0, 0))
+            transform_matrix.PreMultiplyBy(x_rotation)
+        
+        # Apply translation
+        translation = self.tg.CreateVector(pos_x, pos_y, pos_z)
+        transform_matrix.SetTranslation(translation)
+        
+        # Place the component (need to access the compdef attribute)
+        if hasattr(self, 'compdef'):
+            occurrence = self.compdef.Occurrences.Add(component_path, transform_matrix)
+        else:
+            # Fallback for compatibility
+            occurrence = self.invAssemblyDoc.ComponentDefinition.Occurrences.Add(component_path, transform_matrix)
+        
+        return occurrence
+    
+    def set_grid_spacing(self, x_spacing=50.0, y_spacing=50.0, z_spacing=55.0):
+        """Set the grid spacing for component placement."""
+        self.grid_spacing = (x_spacing, y_spacing, z_spacing)
+    
+    def place_component_at_grid(self, component_path, grid_x=0, grid_y=0, grid_z=0, rotation=(0, 0, 0)):
+        """
+        Place a component at grid coordinates.
+        
+        Args:
+            component_path: Full path to the component file
+            grid_x, grid_y, grid_z: Grid coordinates (integers)
+            rotation: (rx, ry, rz) rotation angles in degrees
+            
+        Returns:
+            ComponentOccurrence object
+        """
+        # Calculate actual position from grid coordinates
+        actual_x = grid_x * self.grid_spacing[0]
+        actual_y = grid_y * self.grid_spacing[1] 
+        actual_z = grid_z * self.grid_spacing[2]
+        
+        return self.place_component(component_path, (actual_x, actual_y, actual_z), rotation)
+    
+    def create_uc2_grid_from_table(self, component_table):
+        """
+        Create UC2 cube assembly from a table of components.
+        
+        Args:
+            component_table: List of dictionaries with keys:
+                - 'file': path to component file
+                - 'grid_pos': (x, y, z) grid coordinates
+                - 'rotation': (rx, ry, rz) rotation angles in degrees (optional)
+                - 'name': component name (optional)
+                
+        Returns:
+            List of placed ComponentOccurrence objects
+        """
+        placed_components = []
+        
+        for i, component_info in enumerate(component_table):
+            # Extract component information
+            comp_file = component_info['file']
+            grid_pos = component_info['grid_pos']
+            rotation = component_info.get('rotation', (0, 0, 0))
+            comp_name = component_info.get('name', f'Component_{i+1}')
+            
+            try:
+                # Place the component
+                occurrence = self.place_component_at_grid(
+                    comp_file, 
+                    grid_pos[0], grid_pos[1], grid_pos[2],
+                    rotation
+                )
+                
+                # Set component name if provided
+                if comp_name:
+                    occurrence.Name = comp_name
+                    
+                placed_components.append(occurrence)
+                print(f"Placed {comp_name} at grid {grid_pos} with rotation {rotation}")
+                
+            except Exception as e:
+                print(f"Failed to place {comp_name}: {str(e)}")
+                
+        return placed_components
+    
+    def load_from_optikit_layout(self, json_file_path):
+        """
+        Load UC2 component layout from optikit-layout.json format.
+        
+        Args:
+            json_file_path: Path to the JSON layout file with optikit format
+                
+        Returns:
+            List of placed ComponentOccurrence objects
+        """
+        try:
+            with open(json_file_path, 'r') as f:
+                layout_data = json.load(f)
+            
+            # Extract uc2_components array
+            if 'uc2_components' not in layout_data:
+                raise ValueError("JSON file must contain 'uc2_components' array")
+            
+            components = layout_data['uc2_components']
+            
+            # Convert to format expected by create_uc2_grid_from_table
+            component_table = []
+            for comp in components:
+                component_entry = {
+                    'name': comp.get('name', 'Unknown'),
+                    'file': comp['file'],
+                    'grid_pos': tuple(comp['grid_pos']),  # Convert array to tuple
+                    'rotation': tuple(comp['rotation'])   # Convert array to tuple
+                }
+                component_table.append(component_entry)
+            
+            print(f"Loaded {len(component_table)} components from {json_file_path}")
+            
+            # Use existing method to place components
+            return self.create_uc2_grid_from_table(component_table)
+            
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Layout file not found: {json_file_path}")
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON format in {json_file_path}: {str(e)}")
+        except KeyError as e:
+            raise ValueError(f"Missing required field in JSON: {str(e)}")
+        except Exception as e:
+            raise Exception(f"Error loading optikit layout: {str(e)}")
+    
+    def save(self, file_path='', file_name=''):
+        """Save the assembly document."""
+        if file_path == '' and file_name == '':
+            self.invDoc.Save()
+        else:
+            if file_path != '':
+                save_path = os.path.join(file_path, file_name) if file_name else file_path
+            else:
+                save_path = file_name
+            self.invDoc.SaveAs(save_path, False)
     
     def close(self, save=False):
         """
@@ -1687,9 +1905,19 @@ class iAssembly(com_obj):
             save: Whether to save before closing
         """
         if save:
-            self.invAssemblyDoc.Close(SkipSave=False)
+            if hasattr(self, 'invAssemblyDoc'):
+                self.invAssemblyDoc.Close(SkipSave=False)
+            elif hasattr(self, 'invAsmDoc'):
+                self.invAsmDoc.Close(SkipSave=False)
+            else:
+                self.invDoc.Close(SkipSave=False)
         else:
-            self.invAssemblyDoc.Close(SkipSave=True)
+            if hasattr(self, 'invAssemblyDoc'):
+                self.invAssemblyDoc.Close(SkipSave=True)
+            elif hasattr(self, 'invAsmDoc'):
+                self.invAsmDoc.Close(SkipSave=True)
+            else:
+                self.invDoc.Close(SkipSave=True)
 
 
 def create_assembly_images_batch(assembly_folder, output_folder='', 
