@@ -1,0 +1,9 @@
+name,file_path,grid_x,grid_y,grid_z,rot_x,rot_y,rot_z
+Lens_Origin,C:/UC2_Components/Assembly_cube_lens.iam,0,0,0,0,0,0
+Mirror_50mm,C:/UC2_Components/Assembly_cube_mirror.iam,1,0,0,0,90,0
+Lens_Y50,C:/UC2_Components/Assembly_cube_lens.iam,0,1,0,0,0,0
+Mirror_Corner,C:/UC2_Components/Assembly_cube_mirror.iam,1,1,0,0,45,0
+BeamSplitter_Center,C:/UC2_Components/Assembly_cube_beamsplitter.iam,0,0,1,0,0,0
+Empty_Cube_Support,C:/UC2_Components/Assembly_cube_empty.iam,2,0,0,0,0,0
+Lens_Row2,C:/UC2_Components/Assembly_cube_lens.iam,2,1,0,0,0,0
+Mirror_Angled,C:/UC2_Components/Assembly_cube_mirror.iam,2,2,0,0,135,0
