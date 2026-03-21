@@ -14,20 +14,21 @@ def main():
     """
     # Create new assembly with UC2 grid settings
     assembly = iAssembly('UC2_OptiKit_Assembly.iam', units='metric')
-    
+    base_folder = 'C:\\Users\\benir\\Documents\\openUC2-CAD-new\\workspace\\ASS'  # Adjust this to your components folder
     # Set standard UC2 grid spacing (50x50x55mm)
-    assembly.set_grid_spacing(50.0, 50.0, 55.0)
+    assembly.set_grid_spacing(2.5, 2.5, 5.5/2)
+    assembly.set_grid_spacing(5, 5, 5)
     
     # Load components from optikit-layout.json format
     try:
-        placed_components = assembly.load_from_optikit_layout('optikit-layout.json')
+        placed_components = assembly.load_from_optikit_layout('optikit-layout-exosphere.json', base_folder )
         
         print(f"Successfully placed {len(placed_components)} components:")
         for i, comp in enumerate(placed_components):
             print(f"  {i+1}. {comp.Name}")
         
         # Save the assembly
-        assembly.save()
+        #assembly.save()
         print("\nAssembly saved successfully!")
         
     except Exception as e:
@@ -35,7 +36,8 @@ def main():
     
     finally:
         # Close the assembly
-        assembly.close()
+        print("Closing assembly...")
+        # assembly.close()
 
 if __name__ == "__main__":
     main()

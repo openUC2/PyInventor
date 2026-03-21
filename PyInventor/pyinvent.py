@@ -1756,17 +1756,23 @@ class iAssembly(com_obj):
             transform_matrix.SetToRotation(rot_z, z_axis, self.tg.CreatePoint(0, 0, 0))
         
         if rotation[1] != 0:  # Y rotation
-            y_axis = self.tg.CreateUnitVector(0, 1, 0)
-            y_rotation = self.tg.CreateMatrix()
-            y_rotation.SetToRotation(rot_y, y_axis, self.tg.CreatePoint(0, 0, 0))
-            transform_matrix.PreMultiplyBy(y_rotation)
+            try:
+                y_axis = self.tg.CreateUnitVector(0, 1, 0)
+                y_rotation = self.tg.CreateMatrix()
+                y_rotation.SetToRotation(rot_y, y_axis, self.tg.CreatePoint(0, 0, 0))
+                transform_matrix.PreMultiplyBy(y_rotation)
+            except Exception as e:
+                print(f'ERROR applying Y rotation: {str(e)}')
             
         if rotation[0] != 0:  # X rotation
-            x_axis = self.tg.CreateUnitVector(1, 0, 0)
-            x_rotation = self.tg.CreateMatrix()
-            x_rotation.SetToRotation(rot_x, x_axis, self.tg.CreatePoint(0, 0, 0))
-            transform_matrix.PreMultiplyBy(x_rotation)
-        
+            try:
+                x_axis = self.tg.CreateUnitVector(1, 0, 0)
+                x_rotation = self.tg.CreateMatrix()
+                x_rotation.SetToRotation(rot_x, x_axis, self.tg.CreatePoint(0, 0, 0))
+                transform_matrix.PreMultiplyBy(x_rotation)
+            except Exception as e:
+                print(f'ERROR applying X rotation: {str(e)}')
+
         # Apply translation
         translation = self.tg.CreateVector(pos_x, pos_y, pos_z)
         transform_matrix.SetTranslation(translation)
@@ -1803,7 +1809,7 @@ class iAssembly(com_obj):
         
         return self.place_component(component_path, (actual_x, actual_y, actual_z), rotation)
     
-    def create_uc2_grid_from_table(self, component_table):
+    def create_uc2_grid_from_table(self, component_table, base_folder = ""):
         """
         Create UC2 cube assembly from a table of components.
         
@@ -1821,7 +1827,7 @@ class iAssembly(com_obj):
         
         for i, component_info in enumerate(component_table):
             # Extract component information
-            comp_file = component_info['file']
+            comp_file = os.path.join(base_folder, component_info['file'])
             grid_pos = component_info['grid_pos']
             rotation = component_info.get('rotation', (0, 0, 0))
             comp_name = component_info.get('name', f'Component_{i+1}')
@@ -1842,11 +1848,12 @@ class iAssembly(com_obj):
                 print(f"Placed {comp_name} at grid {grid_pos} with rotation {rotation}")
                 
             except Exception as e:
+
                 print(f"Failed to place {comp_name}: {str(e)}")
                 
         return placed_components
     
-    def load_from_optikit_layout(self, json_file_path):
+    def load_from_optikit_layout(self, json_file_path, base_folder=""):
         """
         Load UC2 component layout from optikit-layout.json format.
         
@@ -1856,9 +1863,15 @@ class iAssembly(com_obj):
         Returns:
             List of placed ComponentOccurrence objects
         """
+        import json
         try:
-            with open(json_file_path, 'r') as f:
-                layout_data = json.load(f)
+            with open(json_file_path, 'r', encoding='cp1252') as f:
+                raw = f.read()
+            # Replace all occurrences of '�' with '°'
+            raw = raw.replace('ï¿½', '°') #TODO: THIS IS ODD
+            raw = raw.replace('Â¡', '°')  # Ensure all special characters are replaced
+            
+            layout_data = json.loads(raw)
             
             # Extract uc2_components array
             if 'uc2_components' not in layout_data:
@@ -1880,7 +1893,7 @@ class iAssembly(com_obj):
             print(f"Loaded {len(component_table)} components from {json_file_path}")
             
             # Use existing method to place components
-            return self.create_uc2_grid_from_table(component_table)
+            return self.create_uc2_grid_from_table(component_table, base_folder=base_folder)
             
         except FileNotFoundError:
             raise FileNotFoundError(f"Layout file not found: {json_file_path}")
