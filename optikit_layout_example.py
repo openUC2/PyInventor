@@ -21,7 +21,7 @@ def main():
     
     # Load components from optikit-layout.json format
     try:
-        placed_components = assembly.load_from_optikit_layout('optikit-layout-exosphere.json', base_folder )
+        placed_components = assembly.load_from_optikit_layout('setup_leuven.json', base_folder )
         
         print(f"Successfully placed {len(placed_components)} components:")
         for i, comp in enumerate(placed_components):
