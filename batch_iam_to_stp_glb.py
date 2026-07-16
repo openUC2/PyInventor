@@ -30,6 +30,11 @@ except ImportError:
     sys.exit("cascadio not found. Install it with: pip install cascadio")
 
 try:
+    import pygltflib
+except ImportError:
+    sys.exit("pygltflib not found. Install it with: pip install pygltflib")
+
+try:
     from win32com.client import Dispatch, GetActiveObject
 except ImportError:
     sys.exit("pywin32 not found. Install it with: pip install pywin32")
@@ -119,6 +124,34 @@ def export_iam_to_stp(
 # GLB conversion
 # ---------------------------------------------------------------------------
 
+#: Root node the openUC2 naming contract requires; it puts the scene in mm.
+MM_SCALE_NODE = "__mm_scale__"
+
+
+def add_mm_scale(glb_file: Path) -> bool:
+    """Wrap the scene in a ``__mm_scale__`` root node. True if one was added.
+
+    STEP is millimetres but cascadio writes glTF metres, and glTF carries no unit
+    of its own. The openUC2 naming contract
+    (openUC2-OptiKit/DOCS/inventor-naming-contract.md) closes that gap with a
+    root scale node, which `optikit-core import glb` honors to read everything in
+    mm. Without it every length reaches optikit 1000x too small -- and silently,
+    because the envelope calculation clamps the resulting zero up to one grid
+    cell rather than failing.
+    """
+    gltf = pygltflib.GLTF2().load(str(glb_file))
+    scene = gltf.scenes[gltf.scene or 0]
+    roots = list(scene.nodes or [])
+    if any((gltf.nodes[i].name or "") == MM_SCALE_NODE for i in roots):
+        return False
+    gltf.nodes.append(
+        pygltflib.Node(name=MM_SCALE_NODE, scale=[1000.0, 1000.0, 1000.0], children=roots)
+    )
+    scene.nodes = [len(gltf.nodes) - 1]
+    gltf.save(str(glb_file))
+    return True
+
+
 def convert_stp_to_glb(
     stp_files: list[Path],
     glb_folder: Path,
@@ -146,6 +179,7 @@ def convert_stp_to_glb(
         print(f"  [convert] {stp_file.name}  →  {glb_file.name} ...", end=" ", flush=True)
         try:
             cascadio.step_to_glb(str(stp_file), str(glb_file), tol_linear, tol_angular)
+            add_mm_scale(glb_file)
             print("ok")
             success += 1
         except Exception as exc:
