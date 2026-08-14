@@ -15,6 +15,25 @@ http://help.autodesk.com/view/INVNTOR/2019/ENU/
 This is version 0.4.1 of PyInventor and now supports both individual part creation and assembly image generation! The part creation functionality allows for individual part creation and export. The new assembly functionality allows creating images from multiple perspectives with various rendering options. Not all 3D functionality has been added for parts. The demos (located in the _Tutorial_Notebooks folder) demonstrate the current extents of 
 PyInventor's capabilities. New revisions will likely be added in time.
 
+## Part probe: Inventor -> JSON geometry recipes
+
+`inventor_part_probe.py` connects to a running Inventor instance and dumps a
+part's complete geometry recipe as JSON: parameters (model/user/reference,
+converted to mm/deg), the ordered feature tree with per-feature parameters,
+extrude/revolve profile paths (exact sketch curves), sketches with dimension
+expressions, work features, and the final b-rep inventory (face geometry,
+vertices, mass properties). Optionally exports a STEP copy. Documents that
+are already open in the session are probed in place without disturbing it.
+
+```bash
+python inventor_part_probe.py "PRT - 2027 - INSLEND43F-50 - V04.ipt" --out-dir extracted --step
+```
+
+This is how the openUC2 V4 inserts were reverse-parametrized into CadQuery
+(see `openuc2-cadquery/uc2v4` and `openuc2-cadquery/extracted/README.md`).
+Derived parts carry no recipe of their own — probe the MAS master models for
+the sketch/feature data, the derived part for the released b-rep.
+
 ## NEW FEATURES (v0.4.1):
 
 ### Assembly Image Creation
