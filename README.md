@@ -34,6 +34,64 @@ This is how the openUC2 V4 inserts were reverse-parametrized into CadQuery
 Derived parts carry no recipe of their own — probe the MAS master models for
 the sketch/feature data, the derived part for the released b-rep.
 
+## Shape export: an assembly STEP without the screws
+
+`export_shape_step.py` exports an assembly to STEP with only the parts that
+give it its shape. Electronics (the FRAME's `5xxx` numbering, `BRD -`,
+`ELE -`, boards, the Pi), fasteners, cables, the puzzle joints, the `PRT-2xxx`
+cube inserts and purchased parts that are not a camera, objective, lens,
+mirror or motor are hidden before Inventor writes the file. FRAME #0008:
+269.5 MB → 27.7 MB, same node names and poses, export in 17 s.
+
+```bash
+python export_shape_step.py "FRAME #0008 - Microscope incl accessories.iam" --out C:\exports
+python export_shape_step.py "…iam" --dry-run                    # what would go, and why
+python export_shape_step.py "…iam" --keep "Electronics box" "HIKROBOT" --skip-rule insert
+python export_shape_step.py --dump-rules > rules.json            # edit, then --config rules.json
+```
+
+It is safe to run on a file you have open, even with unsaved edits: the work
+happens on a private sibling copy of the top-level `.iam` (same folder, so
+every reference resolves) that is closed without saving and deleted, and
+nothing is suppressed — Inventor's STEP writer skips hidden components, and
+`Visible = False` can be set on any sub-occurrence from the parent, which
+`Suppress` cannot. The assembly's project must be the active one (a file
+outside it opens read-only). A `.report.json` beside the STEP lists every
+hidden occurrence and the rule that hid it.
+
+`export_named_step.py` exports a manifest of parts/assemblies to STEP with an
+iProperties and range-box probe per file; `assembly_tree.py` prints an
+assembly's occurrence tree with positions.
+
+## dvOPM: configurable assembly, native launch holder, beam-path solids
+
+Two scripts build the openUC2 direct-view OPM (see `openuc2-opmsimulator/OPM_CAD_README.md`
+for the whole pipeline; both need the miniforge `pyinventor` env with pywin32 and a running
+Inventor):
+
+```bash
+# the assembly: cubes, reversed telecentric lens, camera cube, both XYZ stages, the printed
+# launch parts, vendor optics, ray sketch and the beam-path solids, posed for a medium
+python build_opm_assembly.py --layout ..\openuc2-opmsimulator\opm_layout.json --launch ..\openuc2-cadquery\generated\opm_launch --out ..\openuc2-opmsimulator\INVENTOR\OPM_dvOPM.iam
+python build_opm_assembly.py --layout ... --out ... --n 1.56        # re-pose launch, stage, rays, sheet solid
+python build_opm_assembly.py --layout ... --out ... --holder step   # STEP-imported holder instead of the native part
+
+# the launch holder as a NATIVE parametric part (35 user parameters, coil-cut RMS thread)
+python build_opm_holder_ipt.py --plan ..\openuc2-cadquery\generated\opm_launch\opm_launch_plan.json --out ..\openuc2-opmsimulator\INVENTOR\OPM_holder_native.ipt
+```
+
+Every position comes from `opm_layout.json` (openuc2-opmsimulator/opm_layout.py); the
+scripts only place occurrences with explicit matrices, so there are no constraints to
+break. Relative paths are resolved before they reach Inventor (it only takes absolute ones).
+
+COM lessons that these scripts encode: `Edge.StopVertex` (not EndVertex); a sketch on the
+XZ origin plane has sketch-x = -model-X; distances, offsets and hole sizes accept strings
+("30 mm" or a user-parameter name), which is what makes the features parametric; a coil
+with the default rotation is a right-handed helix about its axis; hole features drilled
+from a face plane with normal +Y need `kPositiveExtentDirection`; a multi-body STEP opens
+as an assembly and cannot be saved as .ipt; browser names must be unique across sketches
+and features.
+
 ## NEW FEATURES (v0.4.1):
 
 ### Assembly Image Creation
