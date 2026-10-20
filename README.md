@@ -63,26 +63,82 @@ hidden occurrence and the rule that hid it.
 iProperties and range-box probe per file; `assembly_tree.py` prints an
 assembly's occurrence tree with positions.
 
-## dvOPM: configurable assembly, native launch holder, beam-path solids
+## Assembly manuals: exploded view, parts list and IKEA-style steps as PDF
 
-Two scripts build the openUC2 direct-view OPM (see `openuc2-opmsimulator/OPM_CAD_README.md`
-for the whole pipeline; both need the miniforge `pyinventor` env with pywin32 and a running
-Inventor):
+`assembly_manual.py` turns a module assembly into assembly instructions on the
+openUC2 A3 sheet (template `Standard_openUC2_2025.idw`, title block filled from
+the module's iProperties), without a hand-made presentation file:
+
+* page 1: the whole module exploded, balloons and the BAUTEILLISTE, like the
+  existing `.ipn`/`.idw` drawings;
+* one page per step: big step number, a table of the parts that go in (parts-list
+  item, quantity, part number), and a picture of what is already assembled with
+  the new parts hovering along the direction they go in, arrows beside the big
+  ones and dashed lines into the hole for screws. `SUB - …` pre-assemblies are
+  built first ("3x" when a module holds several identical ones) and later appear
+  as "aus Schritt 1-5".
 
 ```bash
-# the assembly: cubes, reversed telecentric lens, camera cube, both XYZ stages, the printed
-# launch parts, vendor optics, ray sketch and the beam-path solids, posed for a medium
-python build_opm_assembly.py --layout ..\openuc2-opmsimulator\opm_layout.json --launch ..\openuc2-cadquery\generated\opm_launch --out ..\openuc2-opmsimulator\INVENTOR\OPM_dvOPM.iam
-python build_opm_assembly.py --layout ... --out ... --n 1.56        # re-pose launch, stage, rays, sheet solid
-python build_opm_assembly.py --layout ... --out ... --holder step   # STEP-imported holder instead of the native part
-
-# the launch holder as a NATIVE parametric part (35 user parameters, coil-cut RMS thread)
-python build_opm_holder_ipt.py --plan ..\openuc2-cadquery\generated\opm_launch\opm_launch_plan.json --out ..\openuc2-opmsimulator\INVENTOR\OPM_holder_native.ipt
+python assembly_manual.py "…\ASS - 2067 - CUBLENASP20- V04.iam" --out MANUALS
+python assembly_manual.py "…\workspace\ASS" --pattern "ASS - 20*.iam" --out MANUALS   # a folder
+python assembly_manual.py --kit "…\workspace\KIT" --out MANUALS        # every module of every kit (newest batch)
+python assembly_manual.py --kit "…\KIT\CORE" --out MANUALS             # one kit
+python assembly_manual.py "…iam" --dry-run                            # print the steps only
+python assembly_manual.py "…iam" --style lines --keep-drawing         # line art; keep the .idw to touch up
 ```
 
-Every position comes from `opm_layout.json` (openuc2-opmsimulator/opm_layout.py); the
-scripts only place occurrences with explicit matrices, so there are no constraints to
-break. Relative paths are resolved before they reach Inventor (it only takes absolute ones).
+Per module it writes `<stem>.pdf` and `<stem>.manual.json` (parts list, steps with
+directions, what was left out and why); each output folder gets a `manuals.json`
+index. Existing PDFs are skipped unless `--overwrite`.
+
+How the explosion is found (`explode_plan.py`, pure numpy, tested in
+`tests/test_explode_plan.py`): every visible part is meshed, and per pair of parts
+a depth map along ±X/±Y/±Z (and along the normal of a tilted plate, e.g. a mirror on a 45° seat) says whether one sits in front of the other. The module
+is taken apart around its grounded part one round at a time (whatever nothing
+blocks leaves along its free direction); reversed, that is the assembly order.
+Screws, pins and washers (ISO/DIN/STD names) only count what sits in front of them
+along their own axis, because their thread is modelled into a tap-drill hole.
+Every part is then pulled out along its direction until its box clears what went
+in before it, plus `--gap` (8 mm). Pages whose parts move sideways turn the module to the iso
+corner they move towards, so nothing is pulled out behind what it goes into. Cable strands, hidden and virtual components
+are listed but not drawn; stickers get one last step. A part that is stuck in
+every direction (interfering CAD) is taken out where it is least stuck and the
+step is marked `forced` in the JSON.
+
+Nothing in the workspace is touched: each picture is a throw-away assembly of the
+same part definitions (model states and appearance overrides carried over) saved
+in a temp folder that is deleted afterwards (`--keep-drawing` keeps it with the
+`.idw` beside the PDF). It runs in the open Inventor, invisibly, and leaves
+`SilentOperation` as it found it; ~20 s for a 3-page module, ~50 s for 7 pages.
+
+## Project builders (dvOPM, OpenRAMAN): CAD-new names
+
+The assembly builders now live in their project repositories: `openuc2-opmsimulator`
+(`build_opm_assembly.py`, `build_opm_holder_ipt.py`, pipeline in `OPM_CAD_README.md`) and
+`openuc2-openraman` (`build_raman_assembly.py`). Both run in the miniforge `pyinventor` env with
+a running Inventor and share `inventor_helpers.py` (one file, copied into each repo):
+
+```bash
+cd ..\openuc2-opmsimulator
+python build_opm_assembly.py                 # INVENTOR\ASS - 9100 - OPMDVOPM - V04.iam + .stp + BOM JSON
+python build_opm_assembly.py --n 1.56        # re-pose launch, stage, rays, sheet solid
+cd ..\openuc2-openraman
+python build_raman_assembly.py --all         # INVENTOR\ASS - 9200 - RAMAN - V04 - A|B|C.iam
+```
+
+They place the openUC2 parts and modules straight from `openUC2-CAD-new\workspace` (a library
+path of the FRAME project) and keep Inventor's own occurrence names (`ASS - 2000 - CUB - V04:3`),
+so the browser, the BOM and the GLB node names (see the naming contract in optikit-core) are the
+CAD-new ones; each occurrence's purpose is an attribute (`uc2gen` / `role`). Generated parts get
+CAD-new-style names with provisional 9xxx numbers, bought parts outside CAD-new `BUY - ...`,
+reference geometry `REF - ...` outside the BOM. The scripts work on invisible documents, restore
+`SilentOperation` and close only what they loaded.
+
+Optics stay in cubes wherever possible (cubes first, then adapters). A CAD-new module that has to
+face another way is rebuilt as a new assembly of the same CAD-new parts, turned inside its cube
+(`occ_frame` / `turn_frame` in `inventor_helpers.py`): the dvOPM's fold mirror (`ASS - 9110`,
+ASS-2020 turned) and lens cube (`ASS - 9111`, ASS-3011 turned); a part no module holds gets a
+dedicated adapter in the cube (`ASS - 9112`, the camera in ASS-3011's master-insert sandwich).
 
 COM lessons that these scripts encode: `Edge.StopVertex` (not EndVertex); a sketch on the
 XZ origin plane has sketch-x = -model-X; distances, offsets and hole sizes accept strings
@@ -90,7 +146,8 @@ XZ origin plane has sketch-x = -model-X; distances, offsets and hole sizes accep
 with the default rotation is a right-handed helix about its axis; hole features drilled
 from a face plane with normal +Y need `kPositiveExtentDirection`; a multi-body STEP opens
 as an assembly and cannot be saved as .ipt; browser names must be unique across sketches
-and features.
+and features; enum values (BOM structures, attribute value types) can be read from
+`RxInventor.tlb` with `pythoncom.LoadTypeLib`.
 
 ## NEW FEATURES (v0.4.1):
 

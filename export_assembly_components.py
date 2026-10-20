@@ -4,11 +4,17 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+'''
+        python export_assembly_components.py "C:\\Users\\benir\\Documents\\openUC2-CAD-new\\workspace\\KIT\\ABBE\\KIT - ABBE - ABB-26-01.iam" --out "C:\\Users\\benir\\Documents\\openUC2-CAD-EXPORT\\KIT-ABBE-ABB-26-01"
+        python export_assembly_components.py "C:\\Users\\benir\\Documents\\openUC2-CAD-new\\workspace\\KIT\\FLUOBOXLEDGREEN\\KIT - FLUOBOXLEDGREEN - FLULEDGRN-25-01.iam" --out "C:\\Users\\benir\\Documents\\openUC2-CAD-EXPORT\\KIT-FLUOBOXLEDGREEN-FLULEDGRN-25-01"
+        '''
 try:
     import pythoncom
     import win32com.client
@@ -373,6 +379,18 @@ def export_components(
     return produced
 
 
+def step_to_glb(stp_path: Path, glb_path: Path, tol_linear: float, tol_angular: float) -> None:
+    """cascadio opens narrow-char paths, so a name with U+00B0 (°) goes through a temp copy."""
+    if str(stp_path).isascii() and str(glb_path).isascii():
+        cascadio.step_to_glb(str(stp_path), str(glb_path), tol_linear=tol_linear, tol_angular=tol_angular)
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        src, dst = Path(tmp) / "in.stp", Path(tmp) / "out.glb"
+        shutil.copyfile(stp_path, src)
+        cascadio.step_to_glb(str(src), str(dst), tol_linear=tol_linear, tol_angular=tol_angular)
+        shutil.move(str(dst), glb_path)
+
+
 def convert_to_glb(
     stp_files: dict[str, Path],
     glb_dir: Path,
@@ -396,12 +414,7 @@ def convert_to_glb(
 
         print(f"  {label} ...", end=" ", flush=True)
         try:
-            cascadio.step_to_glb(
-                str(stp_path),
-                str(glb_path),
-                tol_linear=tol_linear,
-                tol_angular=tol_angular,
-            )
+            step_to_glb(stp_path, glb_path, tol_linear, tol_angular)
             add_mm_scale(glb_path)
             print("ok")
             produced[stem] = glb_path
