@@ -5,6 +5,7 @@
     python assembly_manual.py <folder> --pattern "ASS - 20*.iam" --out MANUALS
     python assembly_manual.py --kit "KIT - CORE - COR-25-02.iam" --out MANUALS
     python assembly_manual.py --kit "C:\\Users\\benir\\Documents\\openUC2-CAD-new\\workspace\\KIT\\HOLO\\KIT - HOLO - HOL-26-02" --out MANUALS
+    python assembly_manual.py --kit "...\\workspace\\KIT\\CORE" --out MANUALS --picklist
 For every module it writes ``<stem>.pdf`` (and ``<stem>.manual.json``):
 
   * page 1 - the exploded view with balloons and the parts list (BAUTEILLISTE)
@@ -1259,9 +1260,10 @@ def kit_files(p: Path) -> list[Path]:
     return found
 
 
-def collect_inputs(args, app) -> list[tuple[Path, Path]]:
-    """(assembly, output folder) pairs."""
+def collect_inputs(args, app) -> tuple[list[tuple[Path, Path]], dict[Path, Path]]:
+    """(assembly, output folder) pairs, and the kit .iam of each kit's output folder."""
     jobs: list[tuple[Path, Path]] = []
+    kits: dict[Path, Path] = {}
     out = args.out.resolve()
     for raw in args.paths:
         p = raw.resolve()
@@ -1270,6 +1272,7 @@ def collect_inputs(args, app) -> list[tuple[Path, Path]]:
                 mods = modules_from_kit(app, kit)
                 log(f"{kit.name}: {len(mods)} module(s)")
                 jobs.extend((m, out / kit.stem) for m in mods)
+                kits[out / kit.stem] = kit
         elif p.is_dir():
             files = sorted(p.rglob(args.pattern) if args.recursive else p.glob(args.pattern))
             files = [f for f in files if "OldVersions" not in f.parts and " - manual files" not in str(f.parent)]
@@ -1282,7 +1285,7 @@ def collect_inputs(args, app) -> list[tuple[Path, Path]]:
         if k not in seen:
             seen.add(k)
             unique.append((iam, dest))
-    return unique
+    return unique, kits
 
 
 def main() -> int:
@@ -1306,12 +1309,14 @@ def main() -> int:
     ap.add_argument("--template", default=None, help="drawing template (default: the project's Standard_openUC2_2025.idw)")
     ap.add_argument("--title-block", default=None, help="title block name (default: the template's A3 one)")
     ap.add_argument("--dry-run", action="store_true", help="plan and print the steps, draw nothing")
+    ap.add_argument("--picklist", action="store_true",
+                    help="afterwards one pick list PDF per output folder: all parts with quantities and pictures (picklist.py)")
     args = ap.parse_args()
 
     app = connect(args.paths[0].resolve() if args.paths[0].suffix.lower() == ".iam" else None)
     with Session(app) as ses:
         log(f"Inventor project: {ses.project}")
-        jobs = collect_inputs(args, app)
+        jobs, kits = collect_inputs(args, app)
         if not jobs:
             log("Nothing to do.")
             return 1
@@ -1338,9 +1343,23 @@ def main() -> int:
                 by_dest.setdefault(dest, []).append(r)
             for dest, rs in by_dest.items():
                 write_index(dest / "manuals.json", rs)
-        failed = [r for r in results if r.get("failed")]
-        log(f"\n{len(results) - len(failed)} done, {len(failed)} failed")
-        return 1 if failed else 0
+    failed = [r for r in results if r.get("failed")]
+    lists_failed = 0
+    if args.picklist and not args.dry_run:
+        # After the session: the pick list reads the files with Apprentice, not through Inventor.
+        from picklist import make_picklist
+        for dest in dict.fromkeys(d for _, d in jobs):
+            log(f"\nPick list {dest.name}")
+            try:
+                make_picklist(dest, kit=kits.get(dest), log=log,
+                              only=None if dest in kits else {iam.stem for iam, d in jobs if d == dest})
+            except Exception as exc:
+                log(f"    FAILED: {exc}")
+                traceback.print_exc()
+                lists_failed += 1
+    log(f"\n{len(results) - len(failed)} done, {len(failed)} failed"
+        + (f", {lists_failed} pick list(s) failed" if lists_failed else ""))
+    return 1 if failed or lists_failed else 0
 
 
 INDEX_KEYS = ("module", "assembly", "pdf", "part_number", "description", "pages", "failed", "skipped")

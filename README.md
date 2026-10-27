@@ -111,6 +111,27 @@ in a temp folder that is deleted afterwards (`--keep-drawing` keeps it with the
 `.idw` beside the PDF). It runs in the open Inventor, invisibly, and leaves
 `SilentOperation` as it found it; ~20 s for a 3-page module, ~50 s for 7 pages.
 
+### Pick list for the warehouse
+
+`picklist.py` makes one PDF per kit (or output folder) to collect the parts before
+building. It starts with a list of every part: Inventor part number, quantity,
+BUY/PRT, the modules it goes into, and a box to tick. Then comes one page of
+pictures of all BUY parts and one of all PRT parts. Each card shows the list
+position and the quantity. A kit's modules count as often as the kit holds them,
+and parts placed loose in the kit (box, tweezers, guide, …) are added.
+
+```bash
+python assembly_manual.py --kit "…\KIT\CORE" --out MANUALS --picklist   # manuals first, then the pick list
+python picklist.py "MANUALS\KIT - CORE - COR-25-02" --kit "…\KIT\CORE\KIT - CORE - COR-25-02.iam"
+python picklist.py "MANUALS\Workshop" --title "Workshop" --paper a3     # all manuals in a folder
+```
+
+It reads the parts lists from the `*.manual.json` files, so it needs no Inventor
+session. The pictures are rendered from the part files with Inventor Apprentice
+(`part_render.py`: shaded with outlines, flat parts turned face-on) and cached in
+`.picklist-images` beside the PDF. Output: `<kit> - Teileliste.pdf` and a `.csv`
+(`;`, UTF-8) of the same list.
+
 ## Project builders (dvOPM, OpenRAMAN): CAD-new names
 
 The assembly builders now live in their project repositories: `openuc2-opmsimulator`
